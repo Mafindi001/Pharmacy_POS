@@ -1,0 +1,1549 @@
+/* ==========================================
+   rxmanager DESIGN SYSTEM (styles.css)
+   STYLING: Impeccable CSS dark-mode & clinical accents
+   ========================================== */
+
+:root {
+    /* Color Palette (OKLCH Spec) */
+    --bg: oklch(0.07 0.002 220);             /* Dark charcoal base */
+    --surface-solid: oklch(0.12 0.003 220);  /* Solid card slate */
+    --surface: oklch(0.13 0.005 220 / 0.7);  /* Glassmorphic plate */
+    --surface-hover: oklch(0.18 0.008 220 / 0.95);
+    
+    --border: oklch(0.24 0.01 220 / 0.4);    /* Subtle panel separation */
+    --border-hover: oklch(0.35 0.015 220 / 0.6);
+    --border-focus: oklch(0.72 0.15 200);    /* Neon Cyan focus ring */
+    
+    /* Text / Ink values (high contrast >= 7:1) */
+    --ink: oklch(0.96 0.002 220);            /* Crisp off-white */
+    --muted: oklch(0.68 0.005 220);          /* Accessible secondary text */
+    
+    /* Brand & Accents */
+    --primary: oklch(0.72 0.15 200);         /* Neon Cyan */
+    --primary-hover: oklch(0.78 0.17 200);
+    --primary-glow: oklch(0.72 0.15 200 / 0.15);
+    
+    /* Status Colors */
+    --safe: oklch(0.75 0.16 150);            /* Neon Emerald (success, in-stock) */
+    --safe-hover: oklch(0.81 0.18 150);
+    --danger: oklch(0.65 0.20 15);           /* Neon Rose (warnings, expired, rx) */
+    --danger-hover: oklch(0.71 0.22 15);
+    --warning: oklch(0.82 0.15 91.3);         /* Honey Gold seed-063 (near-expiry, dead-stock) */
+
+    /* Typography Scales */
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* ==========================================
+   1. CORE HTML ELEMENT DECORATORS
+   ========================================== */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    position: fixed;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+}
+
+p {
+    text-wrap: pretty;
+    max-width: 68ch;
+}
+
+hr.summary-divider {
+    border: 0;
+    height: 1px;
+    background: var(--border);
+    margin: 16px 0;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
+}
+
+/* ==========================================
+   2. SHIELD / LAYOUT STRUCTURING
+   ========================================== */
+
+#app-container {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    width: 100vw;
+    height: 100vh;
+}
+
+.main-content {
+    padding: 24px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-width: 0;
+    background: radial-gradient(circle at 70% 30%, oklch(0.12 0.02 200 / 0.15), transparent 60%);
+}
+
+.tab-view {
+    display: none;
+    height: 100%;
+}
+.tab-view.active {
+    display: block;
+    animation: fadeIn 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* ==========================================
+   3. SIDEBAR STYLING
+   ========================================== */
+
+.sidebar {
+    background-color: var(--surface-solid);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 24px 16px;
+    overflow-y: auto; /* Enable vertical scroll if content overflows screen height */
+}
+
+.sidebar-header {
+    margin-bottom: 32px;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.logo .icon {
+    font-size: 1.5rem;
+}
+.brand-text {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: -0.02em;
+}
+
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-grow: 1;
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--muted);
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 12px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.nav-link:hover {
+    color: var(--ink);
+    background-color: var(--surface);
+    border-color: var(--border);
+}
+
+.nav-link.active {
+    color: var(--ink);
+    background-color: var(--surface-hover);
+    border-color: var(--primary);
+    box-shadow: 0 0 12px var(--primary-glow);
+}
+
+.sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    transition: background-color 0.2s ease;
+}
+.user-profile:hover {
+    background-color: var(--surface-hover);
+}
+.user-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background-color: var(--primary);
+    color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+.user-info {
+    display: flex;
+    flex-direction: column;
+}
+.user-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ink);
+}
+.user-role-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--primary);
+    background-color: var(--primary-glow);
+    padding: 2px 6px;
+    border-radius: 4px;
+    width: fit-content;
+    margin-top: 2px;
+}
+
+.network-badge {
+    font-size: 0.75rem;
+    padding: 8px 12px;
+    background-color: oklch(0 0 0 / 0.2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+.net-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+.status-dot.online {
+    background-color: var(--safe);
+    box-shadow: 0 0 6px var(--safe);
+}
+.net-text {
+    font-weight: 600;
+    color: var(--ink);
+}
+.net-ip {
+    font-family: var(--font-mono);
+    color: var(--muted);
+    font-size: 0.72rem;
+    word-break: break-all;
+}
+
+/* ==========================================
+   4. COMPONENT CARDS & PANELS (GLASS)
+   ========================================== */
+
+.glass-panel {
+    background: var(--surface);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 8px 32px 0 oklch(0 0 0 / 0.4);
+}
+
+.glass-panel.warning-border {
+    border-color: var(--danger);
+}
+.glass-panel.success-border {
+    border-color: var(--safe);
+}
+
+/* ==========================================
+   5. INTERACTIVE BUTTONS
+   ========================================== */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: var(--font-sans);
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.primary-btn {
+    background-color: var(--primary);
+    color: var(--bg);
+}
+.primary-btn:hover:not(:disabled) {
+    background-color: var(--primary-hover);
+    box-shadow: 0 0 12px var(--primary-glow);
+}
+
+.secondary-btn {
+    background-color: transparent;
+    border-color: var(--border);
+    color: var(--ink);
+}
+.secondary-btn:hover:not(:disabled) {
+    background-color: var(--surface);
+    border-color: var(--muted);
+}
+
+.success-btn {
+    background-color: var(--safe);
+    color: var(--bg);
+}
+.success-btn:hover:not(:disabled) {
+    background-color: var(--safe-hover);
+    box-shadow: 0 0 12px oklch(var(--safe) / 0.2);
+}
+
+.logout-btn {
+    background-color: transparent;
+    border-color: var(--border);
+    color: var(--danger);
+}
+.logout-btn:hover {
+    background-color: oklch(var(--danger) / 0.1);
+    border-color: var(--danger);
+}
+
+.btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.full-btn {
+    width: 100%;
+}
+
+/* ==========================================
+   6. INPUT FORM FIELDS & LABELS
+   ========================================== */
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.input-group label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.input-group input, 
+.input-group select,
+.input-group textarea {
+    background-color: oklch(0 0 0 / 0.2);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    padding: 10px 14px;
+    border-radius: 8px;
+    width: 100%;
+    outline: none;
+    transition: all 0.2s ease-out;
+}
+
+.input-group input:hover,
+.input-group select:hover {
+    border-color: var(--border-hover);
+}
+
+.input-group input:focus,
+.input-group select:focus {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.input-group-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.checkbox-group {
+    justify-content: center;
+    height: 100%;
+    margin-bottom: 0;
+}
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.9rem !important;
+    color: var(--ink) !important;
+}
+.checkbox-label input {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.input-hint {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 2px;
+}
+
+/* ==========================================
+   7. TABLES SPECIFICATIONS
+   ========================================== */
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    text-align: left;
+}
+
+.data-table th {
+    color: var(--muted);
+    font-weight: 600;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.data-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.data-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.data-table tbody tr:hover:not(.empty-state-row) {
+    background-color: var(--surface-hover);
+}
+
+/* Custom badges */
+.badge {
+    display: inline-flex;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+.warning-bg {
+    background-color: oklch(var(--warning) / 0.15);
+    color: var(--warning);
+    border: 1px solid oklch(var(--warning) / 0.3);
+}
+.danger-bg {
+    background-color: oklch(var(--danger) / 0.15);
+    color: var(--danger);
+    border: 1px solid oklch(var(--danger) / 0.3);
+}
+.safe-bg {
+    background-color: oklch(var(--safe) / 0.15);
+    color: var(--safe);
+    border: 1px solid oklch(var(--safe) / 0.3);
+}
+.controlled-badge {
+    background-color: oklch(0.6 0.15 300 / 0.15);
+    color: oklch(0.6 0.15 300);
+    border: 1px solid oklch(0.6 0.15 300 / 0.3);
+}
+
+/* Empty Table States */
+.empty-table-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+    color: var(--muted);
+    text-align: center;
+}
+.empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+/* ==========================================
+   8. BILILNG TERMINAL (POS VIEW)
+   ========================================== */
+
+.pos-workspace {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 24px;
+    height: calc(100vh - 80px);
+}
+
+.pos-left-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: 100%;
+}
+
+.pane-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+}
+
+.pane-header h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.barcode-wrapper {
+    position: relative;
+    width: 460px;
+}
+.barcode-wrapper .input-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+}
+#barcode-search {
+    padding: 10px 14px 10px 40px;
+    height: 42px;
+    font-size: 1rem;
+    background-color: var(--surface-solid);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    border-radius: 8px;
+    outline: none;
+    width: 100%;
+    transition: all 0.2s ease;
+}
+#barcode-search:focus {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+/* Search results dropdown panel */
+.search-results-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background-color: var(--surface-solid);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: 0 12px 32px oklch(0 0 0 / 0.5);
+}
+.search-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background-color 0.15s ease;
+}
+.search-item:hover, .search-item.highlighted {
+    background-color: var(--surface-hover);
+}
+.search-item-info {
+    display: flex;
+    flex-direction: column;
+}
+.search-item-title {
+    font-weight: 600;
+    color: var(--ink);
+}
+.search-item-sub {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 2px;
+}
+.search-item-meta {
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.search-item-qty {
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.cart-card {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 0; /* Align table perfectly to border */
+}
+
+.cart-card .data-table {
+    border-radius: 12px 12px 0 0;
+}
+
+/* Cart row adjustments */
+.cart-qty-adjust {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.qty-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+.qty-btn:hover {
+    background-color: var(--surface-hover);
+}
+.cart-qty-val {
+    font-weight: 600;
+    font-family: var(--font-mono);
+}
+
+.delete-row-btn {
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    font-size: 1.1rem;
+    opacity: 0.5;
+    transition: opacity 0.15s ease;
+}
+.delete-row-btn:hover {
+    opacity: 1;
+}
+
+.sell-type-btn {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+}
+.sell-type-btn.active {
+    background-color: var(--primary-glow);
+    border-color: var(--primary);
+    color: var(--ink);
+}
+
+/* Shortcuts indicators panel */
+.shortcuts-bar {
+    display: flex;
+    gap: 16px;
+    padding: 8px 12px;
+    background-color: var(--surface-solid);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: fit-content;
+}
+.shortcut {
+    font-size: 0.8rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.shortcut kbd {
+    background: oklch(0.2 0.005 220);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 0.75rem;
+}
+
+.pos-right-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.summary-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.summary-panel h3 {
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+}
+
+.gate-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background-color: oklch(var(--danger) / 0.05);
+}
+.gate-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.gate-icon {
+    font-size: 1.4rem;
+}
+.gate-header h4 {
+    color: var(--danger);
+    font-weight: 600;
+}
+.gate-header p {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+
+.invoice-summary {
+    background: linear-gradient(135deg, var(--surface-solid), oklch(0.1 0.01 200 / 0.3));
+    flex-grow: 1;
+    justify-content: flex-start;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+.summary-row span:last-child {
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 8px 0 20px 0;
+}
+.total-row span:first-child {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+.total-row span:last-child {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--primary);
+    font-family: var(--font-mono);
+}
+
+.payment-method-selector {
+    margin-bottom: 24px;
+}
+.payment-method-selector label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    display: block;
+}
+.payment-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+}
+.pay-option {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 4px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.pay-option input {
+    display: none;
+}
+.pay-option span {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+.pay-option.active {
+    border-color: var(--primary);
+    background-color: var(--primary-glow);
+}
+.pay-option.active span {
+    color: var(--ink);
+}
+
+/* ==========================================
+   9. INVENTORY MANAGER STYLING
+   ========================================== */
+
+.inventory-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.inventory-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+}
+
+.inventory-subnav {
+    display: flex;
+    gap: 8px;
+    background-color: var(--surface-solid);
+    padding: 4px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+.subnav-btn {
+    border: 0;
+    background: transparent;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: all 0.15s ease;
+}
+.subnav-btn.active {
+    background-color: var(--surface-hover);
+    color: var(--ink);
+}
+
+.inventory-subtab-view {
+    display: none;
+}
+.inventory-subtab-view.active {
+    display: block;
+    animation: fadeIn 0.2s ease;
+}
+
+.grid-2col {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 24px;
+}
+
+/* Optimize Products Registry Table for Desktop One-Screen Fit */
+#subtab-products .data-table th,
+#subtab-products .data-table td {
+    padding: 8px 10px;
+    font-size: 0.82rem;
+}
+#subtab-products .data-table .btn {
+    padding: 4px 6px;
+    font-size: 0.75rem;
+}
+
+.form-panel h3, .list-panel h3 {
+    font-size: 1.1rem;
+    margin-bottom: 16px;
+    color: var(--ink);
+}
+
+.search-box-row {
+    margin-bottom: 16px;
+}
+.search-box-row input {
+    background-color: var(--surface-solid);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    padding: 10px 14px;
+    border-radius: 8px;
+    outline: none;
+    width: 100%;
+}
+.search-box-row input:focus {
+    border-color: var(--border-focus);
+}
+
+.list-table-scroll {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-height: 520px;
+    overflow-y: auto;
+}
+
+/* ==========================================
+   10. BUSINESS REPORTS VIEW
+   ========================================== */
+
+.reports-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.reports-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+}
+
+.reports-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+.report-card {
+    display: flex;
+    flex-direction: column;
+}
+.report-card h3 {
+    font-size: 1rem;
+    margin-bottom: 16px;
+    color: var(--ink);
+}
+
+.card-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+.card-title-row h3 {
+    margin-bottom: 0;
+}
+
+.col-span-2 {
+    grid-column: span 2;
+}
+
+.report-table-scroll {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.report-table-scroll.compact {
+    max-height: 220px;
+}
+
+/* Compact Table Sizing */
+.data-table.compact th {
+    padding: 8px 12px;
+    font-size: 0.75rem;
+}
+.data-table.compact td {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+}
+
+/* ==========================================
+   11. MODAL DIALOGS WINDOWS
+   ========================================== */
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: oklch(0 0 0 / 0.6);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease-out;
+}
+.modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal-card {
+    width: 420px;
+    animation: scaleUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.modal-card h3 {
+    margin-bottom: 12px;
+    font-size: 1.2rem;
+}
+
+.modal-card p {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 16px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+/* Login Card Specifics */
+.login-card {
+    width: 480px;
+    animation: scaleUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.login-header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+.login-header h2 {
+    color: var(--primary);
+    font-size: 1.5rem;
+    margin-bottom: 8px;
+}
+.login-header p {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin: 0 auto;
+}
+.login-footer {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--muted);
+}
+.credentials-tip {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+}
+
+/* Receipt Card Specifics */
+.receipt-card {
+    text-align: center;
+    width: 380px;
+}
+.receipt-header {
+    margin-bottom: 16px;
+}
+.success-icon {
+    display: inline-flex;
+    width: 48px;
+    height: 48px;
+    background-color: oklch(var(--safe) / 0.15);
+    color: var(--safe);
+    font-size: 1.8rem;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+}
+.receipt-body {
+    background-color: oklch(0 0 0 / 0.15);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: left;
+    margin-bottom: 16px;
+}
+.receipt-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+}
+.receipt-row span {
+    color: var(--muted);
+}
+.receipt-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 1.1rem;
+}
+.receipt-total-row span:first-child {
+    font-weight: 600;
+    color: var(--muted);
+}
+.receipt-total-row span:last-child {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.error-msg {
+    background-color: oklch(var(--danger) / 0.1);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    font-size: 0.82rem;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+}
+.hide {
+    display: none !important;
+}
+
+/* ==========================================
+   12. MOTION ANIMATIONS & KEYFRAMES
+   ========================================== */
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleUp {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* Accessibility: respect user prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-delay: 0s !important;
+        animation-duration: 0s !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0s !important;
+        scroll-behavior: auto !important;
+    }
+    .modal-overlay {
+        transition: none !important;
+    }
+}
+
+/* Select Option Dark Mode visibility overrides */
+select, option {
+    background-color: var(--surface-solid) !important;
+    color: var(--ink) !important;
+}
+
+/* ==========================================
+   13. MOBILE RESPONSIVE MEDIA QUERIES
+   ========================================== */
+
+@media (max-width: 1024px) {
+    #app-container {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+    }
+    
+    .mobile-top-bar {
+        display: flex !important;
+    }
+    
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -280px; /* Off-screen */
+        width: 280px;
+        height: 100vh;
+        background-color: var(--surface-solid);
+        border-right: 1px solid var(--border);
+        flex-direction: column;
+        flex-wrap: nowrap;
+        padding: 20px;
+        z-index: 1000;
+        transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 10px 0 30px oklch(0 0 0 / 0.5);
+    }
+    
+    .sidebar.open {
+        left: 0; /* Slide in */
+    }
+    
+    .sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background-color: oklch(0 0 0 / 0.6);
+        backdrop-filter: blur(3px);
+        z-index: 999;
+        display: block; /* Allow .hide class to override this block */
+    }
+    
+    .sidebar-header {
+        margin-bottom: 24px;
+    }
+    
+    .sidebar-nav {
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+        flex-grow: 0 !important; /* Stop stretching vertically */
+    }
+    
+    .sidebar-footer {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 16px;
+        width: 100%;
+        margin-top: 24px !important; /* Move footer up to sit right below navigation links on mobile */
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+    }
+    
+    /* Lock layout of the main content view to fill remaining height */
+    .main-content {
+        padding: 12px;
+        overflow: hidden !important; /* Force no scroll on main container */
+        height: 100%;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Force all tab subviews to fill height and render as flex containers */
+    .tab-view {
+        height: 100%;
+        min-height: 0;
+        display: none;
+        flex-direction: column;
+    }
+    .tab-view.active {
+        display: flex !important;
+    }
+
+    /* POS Split Panel Mobile Toggle Logic */
+    .pos-workspace {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+        gap: 12px;
+    }
+
+    /* Toggle visibility between cart (left) and checkout (right) on phone */
+    .pos-workspace.show-checkout > .pos-left-pane {
+        display: none !important;
+    }
+    .pos-workspace.show-checkout > .pos-right-pane {
+        display: flex !important;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+        overflow-y: auto; /* Allow checkout details to scroll if needed */
+    }
+    .pos-workspace:not(.show-checkout) > .pos-left-pane {
+        display: flex !important;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+    }
+    .pos-workspace:not(.show-checkout) > .pos-right-pane {
+        display: none !important;
+    }
+
+    .pos-left-pane {
+        height: 100%;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .pane-header {
+        flex-direction: row !important; /* Keep search bar next to title or stacked */
+        align-items: center !important;
+        justify-content: space-between;
+        width: 100%;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+    .pane-header h1 {
+        font-size: 1.1rem;
+        margin: 0;
+        display: none; /* Hide 'Billing Terminal' title on phone to save space */
+    }
+
+    .barcode-wrapper {
+        flex-grow: 1;
+        width: 100%;
+    }
+
+    .cart-card {
+        flex-grow: 1;
+        min-height: 0;
+        overflow: auto; /* Support horizontal scroll for columns and vertical for items */
+        border: 1px solid var(--border);
+        border-radius: 8px;
+    }
+    
+    .cart-card .data-table {
+        min-width: 650px;
+    }
+
+    .shortcuts-bar {
+        display: none !important; /* Hide shortcuts bar on mobile screens */
+    }
+
+    .mobile-checkout-next-btn, .mobile-checkout-back-btn {
+        display: block !important; /* Show mobile nav buttons */
+        width: 100%;
+    }
+
+    /* Grid layout form vs list switchers */
+    .inventory-layout, .staff-layout {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+    }
+
+    .inventory-subtab-view {
+        display: none;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+    }
+    .inventory-subtab-view.active {
+        display: flex !important;
+    }
+
+    .grid-2col {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+        min-height: 0;
+        gap: 12px;
+    }
+
+    /* Form vs List panel toggles */
+    .grid-2col.show-list > .form-panel {
+        display: none !important;
+    }
+    .grid-2col.show-list > .list-panel {
+        display: flex !important;
+        flex-direction: column;
+        flex-grow: 1;
+        min-height: 0;
+    }
+    .grid-2col:not(.show-list) > .form-panel {
+        display: flex !important;
+        flex-direction: column;
+        overflow-y: auto; /* Let the form scroll internally if long */
+        flex-grow: 1;
+        min-height: 0;
+    }
+    .grid-2col:not(.show-list) > .list-panel {
+        display: none !important;
+    }
+
+    .list-panel {
+        flex-grow: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .list-table-scroll, .report-table-scroll {
+        flex-grow: 1;
+        min-height: 0;
+        overflow: auto;
+    }
+
+    .data-table {
+        min-width: 700px;
+    }
+
+    /* Reports tab height adjustments */
+    .reports-grid {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+        overflow-y: auto; /* Let reports scroll as a whole page if needed */
+        gap: 16px;
+    }
+}
+
+/* Mobile top bar custom styling styles */
+.mobile-top-bar {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background-color: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 900;
+}
+.mobile-menu-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--ink);
+    font-size: 1.25rem;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease;
+}
+.mobile-menu-btn:hover {
+    background-color: var(--surface-hover);
+}
+.mobile-brand {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 1.1rem;
+    letter-spacing: 0.5px;
+}
+.sidebar-overlay {
+    display: none;
+}
+
+@media (max-width: 600px) {
+    .main-content {
+        padding: 12px;
+    }
+    .input-group-row {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+    .payment-options {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Mobile segmented control toggler custom styles */
+.mobile-toggle-row {
+    display: none; /* Hidden on desktop */
+}
+@media (max-width: 1024px) {
+    .mobile-toggle-row {
+        display: flex !important;
+        background-color: var(--surface-solid);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 4px;
+        gap: 4px;
+        margin-bottom: 12px;
+        flex-shrink: 0;
+    }
+    .toggle-sub-btn {
+        flex: 1;
+        background: transparent;
+        border: 0;
+        color: var(--muted);
+        padding: 8px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.2s ease;
+    }
+    .toggle-sub-btn.active {
+        background-color: var(--primary);
+        color: var(--bg) !important;
+    }
+}
+
+/* Inline expanded drug detail box styling */
+.product-main-row {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+.product-main-row:hover {
+    background-color: var(--surface-hover) !important;
+}
+.product-detail-row {
+    background-color: var(--surface-solid);
+}
+.product-detail-row td {
+    padding: 0 !important; /* Ensure the box fills the area perfectly */
+}
+.expanded-detail-box {
+    padding: 20px;
+    background-color: oklch(0 0 0 / 0.2);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    animation: slideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}

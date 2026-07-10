@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Pharmacy POS & Inventory Manager</title>
+    <!-- Google Fonts: Inter & JetBrains Mono for codes/kbd -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- 1. LOGIN SCREEN OVERLAY -->
+    <div id="login-screen" class="modal-overlay active">
+        <div class="login-card glass-panel">
+            <div class="login-header">
+                <h2>RxManager Login</h2>
+                <p>Authenticate to access the local pharmacy workspace</p>
+            </div>
+            <form id="login-form">
+                <div class="input-group">
+                    <label for="login-username">Username</label>
+                    <input type="text" id="login-username" required placeholder="Enter username..." autocomplete="username">
+                </div>
+                <div class="input-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" required placeholder="Enter password..." autocomplete="current-password">
+                </div>
+                <div id="login-error" class="error-msg hide"></div>
+                <button type="submit" class="btn primary-btn">Login Workspace</button>
+            </form>
+            <div class="login-footer">
+                <p>© 2026 RxPOS. All rights reserved.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. MAIN APPLICATION CONTAINER -->
+    <div id="app-container" class="hide">
+        
+        <!-- MOBILE TOP BAR -->
+        <header class="mobile-top-bar hide">
+            <button id="mobile-nav-toggle" class="mobile-menu-btn">☰</button>
+            <div class="mobile-brand">💊 RxPOS Offline</div>
+            <div style="width: 32px;"></div> <!-- balance flex -->
+        </header>
+
+        <!-- SIDEBAR BACKDROP OVERLAY FOR MOBILE -->
+        <div id="sidebar-overlay" class="sidebar-overlay hide"></div>
+
+        <!-- SIDEBAR NAVIGATION -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="icon">💊</span>
+                    <span class="brand-text">RxPOS Offline</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <button class="nav-link active" data-tab="tab-pos">
+                    <span class="nav-icon">🛒</span> Billing POS
+                </button>
+                <button class="nav-link" data-tab="tab-inventory">
+                    <span class="nav-icon">📦</span> Stock & Products
+                </button>
+                <button class="nav-link" data-tab="tab-reports">
+                    <span class="nav-icon">📊</span> Reports & Margin
+                </button>
+                <button class="nav-link hide" data-tab="tab-staff" id="nav-staff">
+                    <span class="nav-icon">👥</span> Staff Management
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar" id="user-role-avatar">U</div>
+                    <div class="user-info">
+                        <span id="user-display-name" class="user-name">User Name</span>
+                        <span id="user-display-role" class="user-role-badge">CASHIER</span>
+                    </div>
+                </div>
+                
+                <!-- LAN Connection Details -->
+                <div class="network-badge">
+                    <div class="net-status">
+                        <span class="status-dot online"></span>
+                        <span class="net-text">LAN Host Active</span>
+                    </div>
+                    <div class="net-ip" id="server-lan-ip">http://127.0.0.1:8080</div>
+                </div>
+
+                <button id="logout-btn" class="btn logout-btn">Exit Workspace</button>
+            </div>
+        </aside>
+
+        <!-- MAIN VIEWS AREA -->
+        <main class="main-content">
+            
+            <!-- VIEW: POINT OF SALE (POS) -->
+            <div id="tab-pos" class="tab-view active">
+                <div class="pos-workspace">
+                    
+                    <!-- POS LEFT: CART AND SEARCH -->
+                    <div class="pos-left-pane">
+                        <div class="pane-header">
+                            <h1>Billing Terminal</h1>
+                            <div class="barcode-wrapper">
+                                <span class="input-icon">🔍</span>
+                                <input type="text" id="barcode-search" placeholder="Scan Barcode or Search Product Name... [F1]" autocomplete="off">
+                                <div id="search-results-dropdown" class="search-results-dropdown hide"></div>
+                            </div>
+                        </div>
+
+                        <!-- BILLING CART TABLE -->
+                        <div class="cart-card glass-panel">
+                            <table class="data-table" id="cart-table">
+                                <thead>
+                                    <tr>
+                                        <th>Product Name</th>
+                                        <th>Active Ingredient</th>
+                                        <th>Expiry Batch</th>
+                                        <th style="width: 130px;">Sell Type</th>
+                                        <th style="width: 100px;">Qty</th>
+                                        <th>Price (Unit)</th>
+                                        <th>Subtotal</th>
+                                        <th style="width: 60px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cart-tbody">
+                                    <!-- Cart rows rendered dynamically -->
+                                    <tr class="empty-state-row">
+                                        <td colspan="8">
+                                            <div class="empty-table-state">
+                                                <span class="empty-icon">🛒</span>
+                                                <p>No products in the current transaction. Scan a barcode or press F1 to search.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- KEYBOARD SHORTCUTS BAR -->
+                        <div class="shortcuts-bar">
+                            <span class="shortcut"><kbd>F1</kbd> Focus Search</span>
+                            <span class="shortcut"><kbd>F2</kbd> Edit Line Qty</span>
+                            <span class="shortcut"><kbd>F5</kbd> Open Checkout</span>
+                            <span class="shortcut"><kbd>ESC</kbd> Close Modals</span>
+                        </div>
+
+                        <!-- MOBILE PROCEED TO CHECKOUT BUTTON -->
+                        <button type="button" class="btn primary-btn mobile-checkout-next-btn hide" id="mobile-checkout-next-btn" style="margin-top: 12px; font-weight: 700; padding: 14px;">Proceed to Checkout (₦0.00)</button>
+                    </div>
+
+                    <!-- POS RIGHT: CHECKOUT SUMMARY & VERIFICATIONS -->
+                    <div class="pos-right-pane">
+                        <!-- MOBILE BACK TO CART BUTTON -->
+                        <button type="button" class="btn secondary-btn mobile-checkout-back-btn hide" id="mobile-checkout-back-btn" style="margin-bottom: 12px; font-weight: 600;">← Back to Cart</button>
+                        
+                        <!-- CUSTOMER PROFILE CARD -->
+                        <div class="glass-panel summary-panel">
+                            <h3>Customer Metadata</h3>
+                            <div class="input-group-row">
+                                <div class="input-group">
+                                    <label for="cust-name">Name</label>
+                                    <input type="text" id="cust-name" value="Walk-in Customer">
+                                </div>
+                                <div class="input-group">
+                                    <label for="cust-phone">Phone</label>
+                                    <input type="text" id="cust-phone" placeholder="Optional phone number...">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- REGULATED SUBSTANCE VERIFICATION GATE -->
+                        <div id="prescription-gate-panel" class="glass-panel gate-panel warning-border hide">
+                            <div class="gate-header">
+                                <span class="gate-icon">⚠️</span>
+                                <div>
+                                    <h4>Prescription Gate Active</h4>
+                                    <p>Controlled drugs in cart require doctor details.</p>
+                                </div>
+                            </div>
+                            <div class="input-group">
+                                <label for="doctor-name">Prescribing Physician Name *</label>
+                                <input type="text" id="doctor-name" placeholder="Dr. John Doe">
+                            </div>
+                            <div class="input-group">
+                                <label for="doctor-license">Medical License Number *</label>
+                                <input type="text" id="doctor-license" placeholder="LIC-987654-2026">
+                            </div>
+                        </div>
+
+                        <!-- BILLING SUMMARY CARD -->
+                        <div class="glass-panel summary-panel invoice-summary">
+                            <h3>Billing Summary</h3>
+                            <div class="summary-row">
+                                <span>Cart Line Items:</span>
+                                <span id="summary-line-count">0</span>
+                            </div>
+                            <div class="summary-row">
+                                <span>Total Pieces:</span>
+                                <span id="summary-total-qty">0</span>
+                            </div>
+                            <hr class="summary-divider">
+                            <div class="total-row">
+                                <span>Total Amount:</span>
+                                <span id="summary-total-amount">₦0.00</span>
+                            </div>
+
+                            <div class="payment-method-selector">
+                                <label>Payment Method</label>
+                                <div class="payment-options">
+                                    <label class="pay-option active">
+                                        <input type="radio" name="payment-type" value="CASH" checked>
+                                        <span>💵 Cash</span>
+                                    </label>
+                                    <label class="pay-option">
+                                        <input type="radio" name="payment-type" value="CARD">
+                                        <span>💳 Card</span>
+                                    </label>
+                                    <label class="pay-option">
+                                        <input type="radio" name="payment-type" value="MOBILE_TRANSFER">
+                                        <span>📲 Transfer</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <button id="complete-checkout-btn" class="btn success-btn full-btn" disabled>
+                                Complete Invoice <kbd>Enter</kbd>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: INVENTORY & STOCK MANAGER -->
+            <div id="tab-inventory" class="tab-view">
+                <div class="inventory-layout">
+                    
+                    <!-- TAB HEADER/SELECTOR -->
+                    <div class="inventory-header">
+                        <h1>Inventory Repository</h1>
+                        <div class="inventory-subnav">
+                            <button class="subnav-btn active" data-subtab="subtab-products">Products Registry</button>
+                            <button class="subnav-btn" data-subtab="subtab-batches">Receive Batches</button>
+                        </div>
+                    </div>
+
+                    <!-- SUBVIEW: PRODUCTS REGISTRY -->
+                    <div id="subtab-products" class="inventory-subtab-view active">
+                        <div class="glass-panel" style="padding: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                                <h3 style="margin: 0;">Registered Drugs & Products</h3>
+                                <div style="display: flex; gap: 12px; align-items: center; flex-grow: 1; max-width: 500px; justify-content: flex-end; width: 100%;">
+                                    <input type="text" id="registry-search" placeholder="Filter products list..." style="background-color: var(--surface-solid); border: 1px solid var(--border); color: var(--ink); padding: 8px 12px; border-radius: 8px; outline: none; width: 100%; max-width: 300px;">
+                                    <button class="btn primary-btn" id="open-add-product-modal-btn" style="white-space: nowrap; padding: 8px 16px; font-size: 0.85rem;">+ Register Drug</button>
+                                </div>
+                            </div>
+                            <div class="list-table-scroll" style="max-height: calc(100vh - 240px); overflow-y: auto;">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Product Name (Generic)</th>
+                                            <th>Category</th>
+                                            <th>Cost</th>
+                                            <th>Price</th>
+                                            <th>Profit (Margin)</th>
+                                            <th>MOQ</th>
+                                            <th>Total Stock</th>
+                                            <th>Rx?</th>
+                                            <th style="width: 120px; text-align: center;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="registry-tbody">
+                                        <!-- Products loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SUBVIEW: RECEIVE BATCHES -->
+                    <div id="subtab-batches" class="inventory-subtab-view">
+                        <!-- MOBILE ACCORDION SWITCHER -->
+                        <div class="mobile-toggle-row hide" id="batches-mobile-toggle">
+                            <button class="toggle-sub-btn active" id="btn-toggle-batch-form">Restock Form</button>
+                            <button class="toggle-sub-btn" id="btn-toggle-batch-list">Batches List</button>
+                        </div>
+                        <div class="grid-2col">
+                            
+                            <!-- BATCH REGISTRATION FORM -->
+                            <div class="glass-panel form-panel">
+                                <h3>Restock / Log Batch</h3>
+                                <form id="batch-registration-form">
+                                    <div class="input-group">
+                                        <label for="batch-product-select">Select Product *</label>
+                                        <select id="batch-product-select" required>
+                                            <option value="">-- Choose registered product --</option>
+                                        </select>
+                                    </div>
+                                    <div class="input-group-row">
+                                        <div class="input-group">
+                                            <label for="batch-num">Batch Number *</label>
+                                            <input type="text" id="batch-num" required placeholder="e.g. B-PRC-2026A">
+                                        </div>
+                                        <div class="input-group">
+                                            <label for="batch-expiry">Expiry Date *</label>
+                                            <input type="date" id="batch-expiry" required>
+                                        </div>
+                                    </div>
+                                    <div class="input-group-row">
+                                        <div class="input-group">
+                                            <label for="batch-qty">Quantity Received (Atomic Units) *</label>
+                                            <input type="number" id="batch-qty" min="1" required placeholder="Total units (pills)">
+                                            <span class="input-hint" id="batch-qty-hint">Total pieces = Qty</span>
+                                        </div>
+                                        <div class="input-group">
+                                            <label for="batch-supplier">Supplier Name</label>
+                                            <input type="text" id="batch-supplier" placeholder="e.g. PharmaCorp Ltd">
+                                        </div>
+                                    </div>
+                                    <div class="input-group-row">
+                                        <div class="input-group">
+                                            <label for="batch-cost">Cost Price (per atomic unit) *</label>
+                                            <input type="number" id="batch-cost" step="0.01" min="0" required placeholder="₦ Cost">
+                                        </div>
+                                        <div class="input-group">
+                                            <label for="batch-sell">Selling Price (per atomic unit) *</label>
+                                            <input type="number" id="batch-sell" step="0.01" min="0" required placeholder="₦ Sell">
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn primary-btn full-btn">Receive & Restock Batch</button>
+                                </form>
+                            </div>
+
+                            <!-- BATCHES DISPLAY GRID -->
+                            <div class="glass-panel list-panel">
+                                <h3>Stock Batches On Hand</h3>
+                                <div class="list-table-scroll">
+                                    <table class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Product</th>
+                                                <th>Batch #</th>
+                                                <th>Expiry</th>
+                                                <th>Qty On Hand</th>
+                                                <th>Cost</th>
+                                                <th>Sell</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="batches-tbody">
+                                            <!-- Batches loaded dynamically -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- VIEW: ANALYTICS & COGS REPORTS -->
+            <div id="tab-reports" class="tab-view">
+                <div class="reports-layout">
+                    <div class="reports-header">
+                        <h1>Business Intelligence & Profitability</h1>
+                        <button class="btn secondary-btn" id="refresh-reports-btn">Sync Analytics</button>
+                    </div>
+
+                    <!-- ANALYTICS GRID -->
+                    <div class="reports-grid">
+                        
+                        <!-- 1. DAILY MARGINS & COGS -->
+                        <div class="glass-panel report-card col-span-2">
+                            <h3>Daily Net Margin & Cost of Goods Sold (COGS)</h3>
+                            <div class="report-table-scroll">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Sales Date</th>
+                                            <th>Invoices Issued</th>
+                                            <th>Gross Revenue</th>
+                                            <th>Total COGS</th>
+                                            <th>Net Profit</th>
+                                            <th>Margin %</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="report-margins-tbody">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 2. NEAR-EXPIRY ALERTS -->
+                        <div class="glass-panel report-card">
+                            <div class="card-title-row">
+                                <h3>Near-Expiry Batches (≤ 120 Days)</h3>
+                                <span class="badge warning-bg" id="near-expiry-badge">0</span>
+                            </div>
+                            <div class="report-table-scroll compact">
+                                <table class="data-table compact">
+                                    <thead>
+                                        <tr>
+                                            <th>Product Name</th>
+                                            <th>Batch #</th>
+                                            <th>Expiry Date</th>
+                                            <th>Qty</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="report-expiry-tbody">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 3. LOW STOCK PROCUREMENT QUEUE -->
+                        <div class="glass-panel report-card">
+                            <div class="card-title-row">
+                                <h3>Low Stock Procurement Queue</h3>
+                                <span class="badge danger-bg" id="low-stock-badge">0</span>
+                            </div>
+                            <div class="report-table-scroll compact">
+                                <table class="data-table compact">
+                                    <thead>
+                                        <tr>
+                                            <th>Product Name</th>
+                                            <th>SKU</th>
+                                            <th>Reorder Level</th>
+                                            <th>Stock Level</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="report-lowstock-tbody">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 4. DEAD STOCK IDENTIFICATION -->
+                        <div class="glass-panel report-card col-span-2">
+                            <h3>Dead Stock Identifier (No sales in 90 days)</h3>
+                            <div class="report-table-scroll compact">
+                                <table class="data-table compact">
+                                    <thead>
+                                        <tr>
+                                            <th>Product Name</th>
+                                            <th>Generic Name</th>
+                                            <th>Category</th>
+                                            <th>Units Remaining</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="report-deadstock-tbody">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 5. SALES LEDGER & INVOICE REGISTRY -->
+                        <div class="glass-panel report-card col-span-2">
+                            <div class="card-title-row">
+                                <h3>Sales Ledger & Transaction History</h3>
+                                <div class="filter-wrapper">
+                                    <label for="sales-ledger-filter" style="font-size: 0.8rem; color: var(--muted); margin-right: 8px;">Filter Range:</label>
+                                    <select id="sales-ledger-filter" style="background-color: var(--surface-solid); border: 1px solid var(--border); color: var(--ink); padding: 6px 12px; border-radius: 6px; outline: none;">
+                                        <option value="today" selected>Today</option>
+                                        <option value="yesterday">Yesterday</option>
+                                        <option value="last7days">Last 7 Days</option>
+                                        <option value="thismonth">This Month</option>
+                                        <option value="lastmonth">Last Month</option>
+                                        <option value="thisyear">This Year</option>
+                                        <option value="last365days">Last 365 Days</option>
+                                        <option value="all">All Time</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="report-table-scroll">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Invoice Number</th>
+                                            <th>Date & Time</th>
+                                            <th>Customer Name</th>
+                                            <th>Cashier</th>
+                                            <th>Payment Method</th>
+                                            <th>Items Sold Summary</th>
+                                            <th>Total Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="report-sales-ledger-tbody">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW: STAFF MANAGEMENT (ADMIN ONLY) -->
+            <div id="tab-staff" class="tab-view">
+                <div class="staff-layout">
+                    <div class="inventory-header">
+                        <h1>Staff Management</h1>
+                    </div>
+                    
+                    <!-- MOBILE ACCORDION SWITCHER -->
+                    <div class="mobile-toggle-row hide" id="staff-mobile-toggle" style="margin-top: 16px;">
+                        <button class="toggle-sub-btn active" id="btn-toggle-staff-form">Add Staff</button>
+                        <button class="toggle-sub-btn" id="btn-toggle-staff-list">Staff List</button>
+                    </div>
+
+                    <div class="grid-2col" style="margin-top: 20px;">
+                        
+                        <!-- CREATE NEW STAFF ACCOUNT -->
+                        <div class="glass-panel form-panel">
+                            <h3>Add System Staff Account</h3>
+                            <form id="staff-registration-form">
+                                <div class="input-group">
+                                    <label for="staff-name">Full Name *</label>
+                                    <input type="text" id="staff-name" required placeholder="e.g. John Doe">
+                                </div>
+                                <div class="input-group">
+                                    <label for="staff-username">Username *</label>
+                                    <input type="text" id="staff-username" required placeholder="e.g. jdoe">
+                                </div>
+                                <div class="input-group">
+                                    <label for="staff-password">Password *</label>
+                                    <div style="display: flex; gap: 8px;">
+                                        <input type="text" id="staff-password" required placeholder="Min 6 characters" style="flex-grow: 1;">
+                                        <button type="button" class="btn secondary-btn" id="generate-staff-pass-btn" style="padding: 0 12px; font-size: 0.85rem; white-space: nowrap;">Generate</button>
+                                    </div>
+                                </div>
+                                <div class="input-group">
+                                    <label for="staff-role">Role *</label>
+                                    <select id="staff-role" required>
+                                        <option value="SALES">Sales / Cashier</option>
+                                        <option value="ACCOUNTING">Accounting / Accountant</option>
+                                        <option value="PHARMACIST">Pharmacist</option>
+                                        <option value="ADMIN">Administrator</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="btn primary-btn full-btn" style="margin-top: 16px;">Create Staff Account</button>
+                            </form>
+                        </div>
+                        
+                        <!-- CLOUD SYNCHRONIZATION SETTINGS -->
+                        <div class="glass-panel" style="margin-top: 20px;">
+                            <h3>Cloud Sync Configuration</h3>
+                            <p style="font-size: 0.78rem; color: var(--muted); margin-bottom: 12px;">Link this POS system to your centralized cloud database.</p>
+                            <form id="sync-config-form">
+                                <div class="input-group">
+                                    <label for="sync-cloud-url">Central Cloud URL</label>
+                                    <input type="url" id="sync-cloud-url" required placeholder="e.g. https://api.rxpos.com">
+                                </div>
+                                <div class="input-group">
+                                    <label for="sync-store-slug">Store Identifier Slug</label>
+                                    <input type="text" id="sync-store-slug" required placeholder="e.g. downtown-branch">
+                                </div>
+                                <div class="input-group">
+                                    <label for="sync-api-key">Store Secure API Key</label>
+                                    <input type="password" id="sync-api-key" required placeholder="Paste store token here...">
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-top: 16px;">
+                                    <button type="submit" class="btn primary-btn" style="flex-grow: 1;">Save Sync Config</button>
+                                    <button type="button" class="btn secondary-btn" id="manual-sync-trigger-btn" style="padding: 10px 12px;" title="Trigger sync pull & push instantly">🔄 Sync Now</button>
+                                </div>
+                                <div id="sync-status-msg" style="font-size: 0.8rem; margin-top: 10px; font-weight: 600;" class="hide"></div>
+                            </form>
+                        </div>
+                        
+                        <!-- STAFF MEMBERS LIST -->
+                        <div class="glass-panel list-panel">
+                            <h3>Active System Accounts</h3>
+                            <div class="list-table-scroll">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Full Name</th>
+                                            <th>Username</th>
+                                            <th>Role</th>
+                                            <th>Status</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="staff-tbody">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- 3. QUANTITY ADJUSTMENT MODAL -->
+    <div id="qty-modal" class="modal-overlay">
+        <div class="modal-card glass-panel">
+            <h3>Adjust Line Quantity</h3>
+            <div class="input-group">
+                <label for="modal-qty-input">Enter New Quantity</label>
+                <input type="number" id="modal-qty-input" min="1" step="1">
+            </div>
+            <div class="modal-actions">
+                <button class="btn secondary-btn" id="modal-qty-cancel">Cancel</button>
+                <button class="btn primary-btn" id="modal-qty-confirm">Confirm Quantity</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. SUPERVISOR OVERRIDE MODAL -->
+    <div id="override-modal" class="modal-overlay">
+        <div class="modal-card glass-panel warning-border">
+            <h3>Supervisor Override Required</h3>
+            <p>Narcotic category drug requires a pharmacist or administrator override PIN/Password.</p>
+            <form id="override-form">
+                <div class="input-group">
+                    <label for="override-username">Supervisor Username</label>
+                    <input type="text" id="override-username" required placeholder="e.g. pharmacist" value="pharmacist">
+                </div>
+                <div class="input-group">
+                    <label for="override-password">Supervisor Password</label>
+                    <input type="password" id="override-password" required placeholder="Enter password...">
+                </div>
+                <div id="override-error" class="error-msg hide"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn secondary-btn" id="override-cancel">Cancel</button>
+                    <button type="submit" class="btn primary-btn danger-bg">Authorize Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 5. CHECKOUT RECEIPT MODAL -->
+    <div id="receipt-modal" class="modal-overlay">
+        <div class="modal-card glass-panel success-border receipt-card">
+            <div class="receipt-header">
+                <span class="success-icon">✓</span>
+                <h3>Transaction Success</h3>
+                <p id="receipt-invoice-number">INV-20260709-0001</p>
+            </div>
+            <div class="receipt-body">
+                <div class="receipt-row">
+                    <span>Customer:</span>
+                    <strong id="receipt-cust-name">Walk-in</strong>
+                </div>
+                <div class="receipt-row">
+                    <span>Paid Via:</span>
+                    <strong id="receipt-pay-method">CASH</strong>
+                </div>
+                <hr class="summary-divider">
+                <div class="receipt-total-row">
+                    <span>Total Charged:</span>
+                    <span id="receipt-total-amount">₦0.00</span>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn success-btn full-btn" id="receipt-close-btn">Done (New Sale)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. USER PROFILE MODAL -->
+    <div id="profile-modal" class="modal-overlay">
+        <div class="modal-card glass-panel">
+            <h3>Update User Profile</h3>
+            <p>Modify your account display name or change password.</p>
+            <form id="profile-update-form" style="margin-top: 16px;">
+                <div class="input-group">
+                    <label for="profile-full-name">Display Name *</label>
+                    <input type="text" id="profile-full-name" required placeholder="Full Name">
+                </div>
+                <div class="input-group">
+                    <label for="profile-password">New Password</label>
+                    <input type="password" id="profile-password" placeholder="Leave blank to keep current password">
+                </div>
+                <div class="input-group">
+                    <label for="profile-confirm-password">Confirm Password</label>
+                    <input type="password" id="profile-confirm-password" placeholder="Confirm new password">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn secondary-btn" id="profile-modal-cancel">Cancel</button>
+                    <button type="submit" class="btn primary-btn">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 7. ADD PRODUCT MODAL -->
+    <div id="product-modal" class="modal-overlay">
+        <div class="modal-card glass-panel" style="width: 520px;">
+            <h3 id="product-modal-title">Register New Product</h3>
+            <form id="product-modal-form">
+                <div class="input-group">
+                    <label for="modal-prod-name">Product Name *</label>
+                    <input type="text" id="modal-prod-name" required placeholder="e.g. Paracetamol Extra">
+                </div>
+                <div class="input-group">
+                    <label for="modal-prod-generic">Generic Name (Active Ingredient)</label>
+                    <input type="text" id="modal-prod-generic" placeholder="e.g. Acetaminophen">
+                </div>
+                
+                <div class="input-group-row">
+                    <div class="input-group">
+                        <label for="modal-prod-category">Category *</label>
+                        <select id="modal-prod-category" required>
+                            <option value="Analgesics">Analgesics</option>
+                            <option value="Antibiotics">Antibiotics</option>
+                            <option value="Antihistamines">Antihistamines</option>
+                            <option value="Antivirals">Antivirals</option>
+                            <option value="Cardiovascular">Cardiovascular</option>
+                            <option value="Narcotics">Narcotics (Regulated)</option>
+                            <option value="OTC">OTC (Over the counter)</option>
+                            <option value="Syrups">Syrups</option>
+                            <option value="Antidiabetics">Antidiabetics</option>
+                            <option value="Antifungals">Antifungals</option>
+                            <option value="Vitamins & Supplements">Vitamins & Supplements</option>
+                            <option value="Vaccines">Vaccines</option>
+                            <option value="Others">Others (Enter name below)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="modal-prod-form">Form *</label>
+                        <select id="modal-prod-form" required>
+                            <option value="Tablet">Tablet</option>
+                            <option value="Capsule">Capsule</option>
+                            <option value="Syrup">Syrup</option>
+                            <option value="Injection">Injection</option>
+                            <option value="Cream">Cream</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Custom Category Field -->
+                <div class="input-group hide" id="modal-custom-category-group">
+                    <label for="modal-prod-custom-category">Enter Custom Category Name *</label>
+                    <input type="text" id="modal-prod-custom-category" placeholder="e.g. Immunologicals">
+                </div>
+
+                <div class="input-group-row">
+                    <div class="input-group">
+                        <label for="modal-prod-qty">Starting Quantity *</label>
+                        <input type="number" id="modal-prod-qty" min="0" value="0" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="modal-prod-moq">Minimum Order Quantity *</label>
+                        <input type="number" id="modal-prod-moq" min="1" value="1" required>
+                    </div>
+                </div>
+
+                <div class="input-group-row">
+                    <div class="input-group">
+                        <label for="modal-prod-cost">Cost Price (₦ purchased) *</label>
+                        <input type="number" id="modal-prod-cost" min="0" step="0.01" value="0.00" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="modal-prod-price">Selling Price (₦ to be sold) *</label>
+                        <input type="number" id="modal-prod-price" min="0" step="0.01" value="0.00" required>
+                    </div>
+                </div>
+
+                <div class="input-group checkbox-group" style="margin-bottom: 20px;">
+                    <label for="modal-prod-rx" class="checkbox-label">
+                        <input type="checkbox" id="modal-prod-rx" value="1">
+                        <span>Requires Prescription</span>
+                    </label>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn secondary-btn" id="product-modal-cancel">Cancel</button>
+                    <button type="submit" class="btn primary-btn">Save Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+cloud-server/cloud_central.db
+.env
+.DS_Store
+*.log

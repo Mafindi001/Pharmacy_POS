@@ -1,0 +1,55 @@
+{
+  "name": "pharmacy-pos",
+  "version": "1.0.0",
+  "description": "Local-First Pharmacy Inventory & POS Management Software",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "server": "node server.js",
+    "test": "node test_server.js",
+    "build": "electron-packager . PharmacyPOS --platform=win32 --arch=x64 --out=dist --overwrite"
+  },
+  "keywords": [
+    "pharmacy",
+    "pos",
+    "inventory",
+    "sqlite",
+    "electron"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "electron": "^43.1.0",
+    "electron-builder": "^24.13.3",
+    "electron-packager": "^17.1.2"
+  },
+  "build": {
+    "appId": "com.pharmacy.pos",
+    "productName": "PharmacyPOS",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "db.js",
+      "server.js",
+      "renderer/**/*",
+      "package.json"
+    ]
+  }
+}
