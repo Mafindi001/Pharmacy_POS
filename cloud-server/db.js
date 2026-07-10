@@ -22,10 +22,26 @@ if (process.env.DATABASE_URL) {
             const socket = new net.Socket();
             const originalConnect = socket.connect;
             socket.connect = function(port, host, cb) {
-                if (typeof port === 'object') {
-                    return originalConnect.call(this, { ...port, family: 4 }, cb);
+                const targetHost = typeof port === 'object' ? port.host : host;
+                const targetPort = typeof port === 'object' ? port.port : port;
+                const targetCb = typeof port === 'object' ? host : cb;
+
+                if (targetHost && typeof targetHost === 'string') {
+                    const dns = require('dns');
+                    dns.lookup(targetHost, { family: 4 }, (err, address) => {
+                        if (!err && address) {
+                            return originalConnect.call(this, { port: targetPort, host: address, family: 4 }, targetCb);
+                        } else {
+                            return originalConnect.call(this, { port: targetPort, host: targetHost }, targetCb);
+                        }
+                    });
+                    return this;
                 } else {
-                    return originalConnect.call(this, { port: port, host: host, family: 4 }, cb);
+                    if (typeof port === 'object') {
+                        return originalConnect.call(this, port, cb);
+                    } else {
+                        return originalConnect.call(this, { port, host }, cb);
+                    }
                 }
             };
             return socket;
