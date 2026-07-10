@@ -13,7 +13,23 @@ let sqliteDb = null;
 if (process.env.DATABASE_URL) {
     const { Pool } = require('pg');
     pool = new Pool({
-        connectionString: process.env.DATABASE_URL
+        connectionString: process.env.DATABASE_URL,
+        ssl: {
+            rejectUnauthorized: false
+        },
+        stream: () => {
+            const net = require('net');
+            const socket = new net.Socket();
+            const originalConnect = socket.connect;
+            socket.connect = function(port, host, cb) {
+                if (typeof port === 'object') {
+                    return originalConnect.call(this, { ...port, family: 4 }, cb);
+                } else {
+                    return originalConnect.call(this, { port: port, host: host, family: 4 }, cb);
+                }
+            };
+            return socket;
+        }
     });
     usePostgres = true;
     console.log("[Cloud Database] Configured to connect to PostgreSQL central cluster.");

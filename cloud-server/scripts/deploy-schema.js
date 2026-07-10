@@ -15,7 +15,23 @@ if (!connectionString) {
 }
 
 const client = new Client({
-    connectionString: connectionString
+    connectionString: connectionString,
+    ssl: {
+        rejectUnauthorized: false
+    },
+    stream: () => {
+        const net = require('net');
+        const socket = new net.Socket();
+        const originalConnect = socket.connect;
+        socket.connect = function(port, host, cb) {
+            if (typeof port === 'object') {
+                return originalConnect.call(this, { ...port, family: 4 }, cb);
+            } else {
+                return originalConnect.call(this, { port: port, host: host, family: 4 }, cb);
+            }
+        };
+        return socket;
+    }
 });
 
 const schemaSql = `
