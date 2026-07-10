@@ -11,9 +11,17 @@ let pool = null;
 let sqliteDb = null;
 
 if (process.env.DATABASE_URL) {
+    let dbUrl = process.env.DATABASE_URL;
+    if (dbUrl.includes('sslmode=')) {
+        dbUrl = dbUrl.replace(/sslmode=[^&]+/g, 'sslmode=no-verify');
+    } else {
+        const separator = dbUrl.includes('?') ? '&' : '?';
+        dbUrl = dbUrl + separator + 'sslmode=no-verify';
+    }
+
     const { Pool } = require('pg');
     pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
+        connectionString: dbUrl,
         ssl: {
             rejectUnauthorized: false
         },

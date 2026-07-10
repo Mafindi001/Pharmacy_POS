@@ -6,12 +6,19 @@ if (typeof dns.setDefaultResultOrder === 'function') {
 
 const { Client } = require('pg');
 
-const connectionString = process.argv[2] || process.env.DATABASE_URL;
+let connectionString = process.argv[2] || process.env.DATABASE_URL;
 
 if (!connectionString) {
     console.error("Error: Please provide your Supabase Connection String.");
     console.error("Usage: node deploy-schema.js \"postgresql://postgres:password@host:port/database\"");
     process.exit(1);
+}
+
+if (connectionString.includes('sslmode=')) {
+    connectionString = connectionString.replace(/sslmode=[^&]+/g, 'sslmode=no-verify');
+} else {
+    const separator = connectionString.includes('?') ? '&' : '?';
+    connectionString = connectionString + separator + 'sslmode=no-verify';
 }
 
 const client = new Client({
