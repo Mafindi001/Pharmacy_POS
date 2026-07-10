@@ -24,16 +24,37 @@
                     <label for="activation-cloud-url">Central Cloud URL *</label>
                     <input type="url" id="activation-cloud-url" required placeholder="e.g. https://pharmacy-pos-sync.onrender.com">
                 </div>
-                <div class="input-group">
-                    <label for="activation-store-slug">Store Identifier Slug *</label>
-                    <input type="text" id="activation-store-slug" required placeholder="e.g. downtown-branch">
+                <div class="input-group-row" style="display: flex; gap: 12px; margin-bottom: 16px;">
+                    <div class="input-group" style="flex: 1; margin: 0;">
+                        <label for="activation-store-slug">Store Slug *</label>
+                        <input type="text" id="activation-store-slug" required placeholder="e.g. downtown-rx">
+                    </div>
+                    <div class="input-group" style="flex: 1; margin: 0;">
+                        <label for="activation-api-key">Store API Key *</label>
+                        <input type="password" id="activation-api-key" required placeholder="Paste store key...">
+                    </div>
                 </div>
+                
+                <h3 style="margin-top: 20px; margin-bottom: 12px; font-size: 0.95rem; border-bottom: 1px solid var(--border); padding-bottom: 6px; color: var(--primary);">Configure Local Admin Account</h3>
+                
                 <div class="input-group">
-                    <label for="activation-api-key">Store Secure API Key *</label>
-                    <input type="password" id="activation-api-key" required placeholder="Paste store security token here...">
+                    <label for="activation-admin-fullname">Admin Full Name *</label>
+                    <input type="text" id="activation-admin-fullname" required placeholder="e.g. Admin Supervisor">
                 </div>
+                
+                <div class="input-group-row" style="display: flex; gap: 12px; margin-bottom: 16px;">
+                    <div class="input-group" style="flex: 1; margin: 0;">
+                        <label for="activation-admin-username">Admin Username *</label>
+                        <input type="text" id="activation-admin-username" required placeholder="e.g. admin">
+                    </div>
+                    <div class="input-group" style="flex: 1; margin: 0;">
+                        <label for="activation-admin-password">Admin Password *</label>
+                        <input type="password" id="activation-admin-password" required placeholder="Min 6 characters">
+                    </div>
+                </div>
+                
                 <div id="activation-error" class="error-msg hide" style="color: var(--danger); margin-bottom: 12px; font-size: 0.85rem; font-weight: 600;"></div>
-                <button type="submit" class="btn primary-btn" id="activation-submit-btn" style="margin-top: 8px;">Activate POS Client</button>
+                <button type="submit" class="btn primary-btn" id="activation-submit-btn" style="margin-top: 8px;">Activate & Create Admin</button>
             </form>
             <div class="login-footer">
                 <p>© 2026 RxPOS. All rights reserved.</p>

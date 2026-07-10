@@ -1,5 +1,10 @@
 const path = require('path');
 const fs = require('fs');
+const dns = require('dns');
+
+if (typeof dns.setDefaultResultOrder === 'function') {
+    dns.setDefaultResultOrder('ipv4first');
+}
 
 let usePostgres = false;
 let pool = null;

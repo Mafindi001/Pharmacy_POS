@@ -1,3 +1,9 @@
+const dns = require('dns');
+
+if (typeof dns.setDefaultResultOrder === 'function') {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
 const { Client } = require('pg');
 
 const connectionString = process.argv[2] || process.env.DATABASE_URL;

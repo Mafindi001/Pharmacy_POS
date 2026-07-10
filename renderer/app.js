@@ -447,10 +447,29 @@ function setupEventListeners() {
                 errorDiv.textContent = "";
             }
             
+            const adminFullname = document.getElementById('activation-admin-fullname').value.trim();
+            const adminUsername = document.getElementById('activation-admin-username').value.trim();
+            const adminPassword = document.getElementById('activation-admin-password').value;
+            
+            if (adminPassword.length < 6) {
+                if (errorDiv) {
+                    errorDiv.textContent = "Administrator password must be at least 6 characters long.";
+                    errorDiv.classList.remove('hide');
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = "Activate & Create Admin";
+                }
+                return;
+            }
+            
             const payload = {
                 cloud_url: document.getElementById('activation-cloud-url').value.trim(),
                 store_slug: document.getElementById('activation-store-slug').value.trim(),
-                sync_api_key: document.getElementById('activation-api-key').value.trim()
+                sync_api_key: document.getElementById('activation-api-key').value.trim(),
+                admin_fullname: adminFullname,
+                admin_username: adminUsername,
+                admin_password: adminPassword
             };
             
             try {
@@ -461,7 +480,7 @@ function setupEventListeners() {
                 });
                 
                 if (res.ok) {
-                    alert("Activation Successful! Default administrator account initialized.\n\nUsername: admin\nPassword: admin123\n\nPlease log in and update your password.");
+                    alert("Activation Successful! Your administrator account has been initialized.\n\nPlease log in using the credentials you just configured.");
                     
                     // Reload config parameters inside the settings forms
                     fetchSyncConfig();
@@ -470,10 +489,10 @@ function setupEventListeners() {
                     document.getElementById('activation-screen').classList.remove('active');
                     document.getElementById('login-screen').classList.add('active');
                     
-                    // Pre-fill default admin username
+                    // Pre-fill configured admin username
                     const loginUsernameInput = document.getElementById('login-username');
                     if (loginUsernameInput) {
-                        loginUsernameInput.value = 'admin';
+                        loginUsernameInput.value = adminUsername;
                         const loginPasswordInput = document.getElementById('login-password');
                         if (loginPasswordInput) loginPasswordInput.focus();
                     }
@@ -495,7 +514,7 @@ function setupEventListeners() {
             } finally {
                 if (submitBtn) {
                     submitBtn.disabled = false;
-                    submitBtn.textContent = "Activate POS Client";
+                    submitBtn.textContent = "Activate & Create Admin";
                 }
             }
         });

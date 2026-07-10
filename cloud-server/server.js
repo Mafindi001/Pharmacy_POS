@@ -1,4 +1,10 @@
 const express = require('express');
+const dns = require('dns');
+
+if (typeof dns.setDefaultResultOrder === 'function') {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
 const { usePostgres, pool, sqliteDb } = require('./db');
 const app = express();
 

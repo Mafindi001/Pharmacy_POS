@@ -645,11 +645,15 @@ app.get('/api/activation-status', (req, res) => {
 
 // POST /api/activate (Trigger cloud verification, save credentials, and seed admin account)
 app.post('/api/activate', async (req, res) => {
-    const { cloud_url, store_slug, sync_api_key } = req.body;
+    const { cloud_url, store_slug, sync_api_key, admin_fullname, admin_username, admin_password } = req.body;
     const conn = getDbConnection();
     
-    if (!cloud_url || !store_slug || !sync_api_key) {
-        return res.status(400).json({ error: "Missing required activation credentials." });
+    if (!cloud_url || !store_slug || !sync_api_key || !admin_fullname || !admin_username || !admin_password) {
+        return res.status(400).json({ error: "Missing required activation or administrator credentials." });
+    }
+    
+    if (admin_password.trim().length < 6) {
+        return res.status(400).json({ error: "Administrator password must be at least 6 characters long." });
     }
     
     try {
@@ -674,20 +678,20 @@ app.post('/api/activate', async (req, res) => {
         conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('store_slug', ?)").run(store_slug.trim());
         conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('sync_api_key', ?)").run(sync_api_key.trim());
         
-        // 3. Auto-provision default local admin account if no accounts exist
+        // 3. Auto-provision the custom local admin account if no accounts exist
         const checkUsers = conn.prepare("SELECT COUNT(*) as count FROM users").get();
         if (checkUsers.count === 0) {
-            console.log("[Activation] Seeding initial Admin Supervisor account...");
+            console.log(`[Activation] Seeding initial custom Admin account: ${admin_username}`);
             const insertUser = conn.prepare(`
                 INSERT INTO users (username, password_hash, full_name, role)
-                VALUES ('admin', ?, 'Admin Supervisor', 'ADMIN')
+                VALUES (?, ?, ?, 'ADMIN')
             `);
             const bcrypt = require('bcryptjs');
-            insertUser.run(bcrypt.hashSync('admin123', 10));
+            insertUser.run(admin_username.trim().toLowerCase(), bcrypt.hashSync(admin_password, 10), admin_fullname.trim());
         }
         
         conn.exec("COMMIT;");
-        console.log("[Activation] Store activated successfully. Admin seeded.");
+        console.log("[Activation] Store activated successfully. Custom admin created.");
         res.json({ success: true });
     } catch (err) {
         try { conn.exec("ROLLBACK;"); } catch(_) {}
