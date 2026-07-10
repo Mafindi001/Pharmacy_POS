@@ -4,6 +4,28 @@ const app = express();
 
 app.use(express.json());
 
+// Root Gateway Status Page
+app.get('/', (req, res) => {
+    res.send(`
+        <html>
+            <head>
+                <title>RxPOS Sync Engine</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #07070e; color: #f0f0f5; text-align: center; padding-top: 100px; }
+                    .badge { background: #10b981; color: #07070e; padding: 6px 12px; border-radius: 20px; font-weight: bold; font-size: 0.9rem; }
+                    h1 { font-weight: 600; font-size: 2.2rem; }
+                    p { color: #9ca3af; font-size: 1.1rem; }
+                </style>
+            </head>
+            <body>
+                <h1>RxPOS Multi-Tenant Sync Gateway</h1>
+                <p>Status: <span class="badge">Online</span></p>
+                <p style="font-size: 0.9rem; margin-top: 20px;">Secure data synchronization engine for active POS clients.</p>
+            </body>
+        </html>
+    `);
+});
+
 // Multi-tenant Authentication Middleware
 async function authenticateStore(req, res, next) {
     const apiKey = req.headers['x-store-api-key'];
