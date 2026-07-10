@@ -590,6 +590,10 @@ app.get('/admin', (req, res) => {
                             return;
                         }
                         const data = await res.json();
+                        if (!res.ok) {
+                            tbody.innerHTML = \`<tr><td colspan="5" style="text-align: center; color: var(--danger);">Failed to load terminals: \${data.error || 'Unknown error'}</td></tr>\`;
+                            return;
+                        }
                         tbody.innerHTML = '';
                         if (data.length === 0) {
                             tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--muted);">No store terminals provisioned yet.</td></tr>';
