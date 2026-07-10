@@ -272,6 +272,385 @@ app.post('/api/admin/mock-product-price-change', async (req, res) => {
     }
 });
 
+// Admin panel credentials environment resolver
+const ADMIN_USER = process.env.CLOUD_ADMIN_USER || 'admin';
+const ADMIN_PASS = process.env.CLOUD_ADMIN_PASS || 'admin123';
+const ADMIN_TOKEN = 'secret_token_session_rxmanager_2026';
+
+// Helper Admin auth middleware
+function authenticateAdmin(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: "Unauthorized. Missing authorization token." });
+    }
+    const token = authHeader.split(' ')[1];
+    if (token !== ADMIN_TOKEN) {
+        return res.status(403).json({ error: "Forbidden. Invalid administrator session." });
+    }
+    next();
+}
+
+// POST /api/admin/login (Verify admin password and return token)
+app.post('/api/admin/login', (req, res) => {
+    const { user, pass } = req.body;
+    if (user === ADMIN_USER && pass === ADMIN_PASS) {
+        res.json({ success: true, token: ADMIN_TOKEN });
+    } else {
+        res.status(401).json({ error: "Invalid administrator credentials." });
+    }
+});
+
+// GET /api/admin/stores (Fetch all provisioned stores)
+app.get('/api/admin/stores', authenticateAdmin, async (req, res) => {
+    try {
+        if (usePostgres) {
+            const result = await pool.query("SELECT id, slug, api_key, store_name, created_at FROM stores ORDER BY created_at DESC");
+            res.json(result.rows);
+        } else {
+            const rows = sqliteDb.prepare("SELECT id, slug, api_key, store_name, created_at FROM stores ORDER BY created_at DESC").all();
+            res.json(rows);
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/admin/stores (Provision a new store and generate UUID/API Key)
+app.post('/api/admin/stores', authenticateAdmin, async (req, res) => {
+    const { name, slug } = req.body;
+    if (!name || !slug) {
+        return res.status(400).json({ error: "Missing store name or slug." });
+    }
+    
+    const crypto = require('crypto');
+    const tenantId = crypto.randomUUID();
+    const apiKey = 'rxpos_' + crypto.randomBytes(24).toString('hex');
+    
+    try {
+        if (usePostgres) {
+            await pool.query(
+                "INSERT INTO stores (id, slug, api_key, store_name) VALUES ($1, $2, $3, $4)",
+                [tenantId, slug.trim(), apiKey, name.trim()]
+            );
+        } else {
+            const stmt = sqliteDb.prepare("INSERT INTO stores (id, slug, api_key, store_name) VALUES (?, ?, ?, ?)");
+            stmt.run(tenantId, slug.trim(), apiKey, name.trim());
+        }
+        res.json({ success: true, tenant_id: tenantId, api_key: apiKey });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/admin/stores/:id (Revoke and delete store terminal access)
+app.delete('/api/admin/stores/:id', authenticateAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        if (usePostgres) {
+            await pool.query("DELETE FROM stores WHERE id = $1", [id]);
+        } else {
+            sqliteDb.prepare("DELETE FROM stores WHERE id = ?").run(id);
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /admin (Serve the Admin Web Dashboard UI)
+app.get('/admin', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>RxPOS Cloud Admin Panel</title>
+            <style>
+                :root {
+                    --bg: #07070e;
+                    --card: #12121e;
+                    --border: rgba(255,255,255,0.08);
+                    --primary: #06b6d4;
+                    --primary-hover: #0891b2;
+                    --ink: #f0f0f5;
+                    --muted: #9ca3af;
+                    --danger: #ef4444;
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    background-color: var(--bg);
+                    color: var(--ink);
+                    margin: 0;
+                    padding: 24px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: flex-start;
+                    min-height: 100vh;
+                }
+                .container {
+                    width: 100%;
+                    max-width: 900px;
+                }
+                .card {
+                    background-color: var(--card);
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 24px;
+                    margin-bottom: 24px;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                }
+                h1, h2, h3 { margin-top: 0; color: #fff; }
+                .input-group {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    margin-bottom: 16px;
+                }
+                label { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+                input {
+                    background-color: rgba(0,0,0,0.3);
+                    border: 1px solid var(--border);
+                    color: var(--ink);
+                    padding: 10px 14px;
+                    border-radius: 8px;
+                    outline: none;
+                    font-size: 0.95rem;
+                }
+                input:focus { border-color: var(--primary); }
+                .btn {
+                    background-color: var(--primary);
+                    color: var(--bg);
+                    border: none;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    font-size: 0.95rem;
+                }
+                .btn:hover { background-color: var(--primary-hover); }
+                .btn.danger { background-color: var(--danger); color: #fff; }
+                .hide { display: none !important; }
+                .error-msg { color: var(--danger); font-size: 0.85rem; margin-bottom: 12px; font-weight: 600; }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 16px;
+                }
+                th, td {
+                    text-align: left;
+                    padding: 12px 16px;
+                    border-bottom: 1px solid var(--border);
+                }
+                th { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; }
+                td { font-size: 0.9rem; }
+                .copyable {
+                    font-family: monospace;
+                    background: rgba(255,255,255,0.05);
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    user-select: all;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <!-- LOGIN CARD -->
+                <div id="login-card" class="card">
+                    <h2>RxPOS Admin Gateway</h2>
+                    <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 20px;">Enter credentials to configure store terminal instances.</p>
+                    <div id="login-error" class="error-msg hide"></div>
+                    <form id="login-form">
+                        <div class="input-group">
+                            <label>Username</label>
+                            <input type="text" id="admin-user" required placeholder="Enter admin username...">
+                        </div>
+                        <div class="input-group">
+                            <label>Password</label>
+                            <input type="password" id="admin-pass" required placeholder="Enter admin password...">
+                        </div>
+                        <button type="submit" class="btn">Login Console</button>
+                    </form>
+                </div>
+
+                <!-- DASHBOARD CARD -->
+                <div id="dashboard-card" class="card hide">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2>Store Terminals Management</h2>
+                        <button onclick="logout()" class="btn danger" style="padding: 6px 12px; font-size: 0.85rem;">Logout</button>
+                    </div>
+                    
+                    <!-- Provision Store Form -->
+                    <div class="card" style="background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px;">
+                        <h3>Provision New Store Terminal</h3>
+                        <form id="provision-form" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end;">
+                            <div class="input-group" style="margin: 0;">
+                                <label>Store Name</label>
+                                <input type="text" id="store-name" required placeholder="e.g. Downtown Branch">
+                            </div>
+                            <div class="input-group" style="margin: 0;">
+                                <label>Store Slug</label>
+                                <input type="text" id="store-slug" required placeholder="e.g. downtown-rx">
+                            </div>
+                            <button type="submit" class="btn" style="height: 42px;">Provision Key</button>
+                        </form>
+                        <div id="provision-error" class="error-msg hide" style="margin-top: 10px;"></div>
+                    </div>
+
+                    <!-- Stores Listing Table -->
+                    <h3>Registered Store Terminals</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Store Name</th>
+                                <th>Slug</th>
+                                <th>API Key (Click to Copy)</th>
+                                <th>Tenant ID</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stores-tbody">
+                            <!-- Filled dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <script>
+                let authToken = localStorage.getItem('admin_token');
+
+                document.getElementById('login-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const user = document.getElementById('admin-user').value;
+                    const pass = document.getElementById('admin-pass').value;
+                    const errorDiv = document.getElementById('login-error');
+                    
+                    try {
+                        const res = await fetch('/api/admin/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ user, pass })
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            authToken = data.token;
+                            localStorage.setItem('admin_token', authToken);
+                            showDashboard();
+                        } else {
+                            const data = await res.json();
+                            errorDiv.textContent = data.error || "Login failed.";
+                            errorDiv.classList.remove('hide');
+                        }
+                    } catch(err) {
+                        errorDiv.textContent = "Error: " + err.message;
+                        errorDiv.classList.remove('hide');
+                    }
+                });
+
+                document.getElementById('provision-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const name = document.getElementById('store-name').value.trim();
+                    const slug = document.getElementById('store-slug').value.trim();
+                    const errorDiv = document.getElementById('provision-error');
+                    errorDiv.classList.add('hide');
+
+                    try {
+                        const res = await fetch('/api/admin/stores', {
+                            method: 'POST',
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + authToken
+                            },
+                            body: JSON.stringify({ name, slug })
+                        });
+                        if (res.ok) {
+                            document.getElementById('store-name').value = '';
+                            document.getElementById('store-slug').value = '';
+                            loadStores();
+                        } else {
+                            const data = await res.json();
+                            errorDiv.textContent = data.error || "Provisioning failed.";
+                            errorDiv.classList.remove('hide');
+                        }
+                    } catch(err) {
+                        errorDiv.textContent = "Error: " + err.message;
+                        errorDiv.classList.remove('hide');
+                    }
+                });
+
+                async function loadStores() {
+                    const tbody = document.getElementById('stores-tbody');
+                    try {
+                        const res = await fetch('/api/admin/stores', {
+                            headers: { 'Authorization': 'Bearer ' + authToken }
+                        });
+                        if (res.status === 401 || res.status === 403) {
+                            logout();
+                            return;
+                        }
+                        const data = await res.json();
+                        tbody.innerHTML = '';
+                        if (data.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--muted);">No store terminals provisioned yet.</td></tr>';
+                            return;
+                        }
+                        data.forEach(s => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = \`
+                                <td><strong>\${s.store_name}</strong></td>
+                                <td><span style="color: var(--primary);">\${s.slug}</span></td>
+                                <td><span class="copyable" onclick="navigator.clipboard.writeText('\${s.api_key}'); alert('API Key copied!');">\${s.api_key} [Copy]</span></td>
+                                <td><span style="font-family: monospace; font-size: 0.8rem;">\${s.id}</span></td>
+                                <td><button class="btn danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="deleteStore('\${s.id}')">Delete</button></td>
+                            \`;
+                            tbody.appendChild(tr);
+                        });
+                    } catch(err) {
+                        tbody.innerHTML = \`<tr><td colspan="5" style="text-align: center; color: var(--danger);">Failed to load terminals: \${err.message}</td></tr>\`;
+                    }
+                }
+
+                async function deleteStore(id) {
+                    if (!confirm("Are you sure you want to delete and revoke this store terminal?")) return;
+                    try {
+                        const res = await fetch('/api/admin/stores/' + id, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': 'Bearer ' + authToken }
+                        });
+                        if (res.ok) {
+                            loadStores();
+                        } else {
+                            const data = await res.json();
+                            alert("Failed to delete store: " + data.error);
+                        }
+                    } catch(err) {
+                        alert("Error: " + err.message);
+                    }
+                }
+
+                function showDashboard() {
+                    document.getElementById('login-card').classList.add('hide');
+                    document.getElementById('dashboard-card').classList.remove('hide');
+                    loadStores();
+                }
+
+                function logout() {
+                    localStorage.removeItem('admin_token');
+                    authToken = null;
+                    document.getElementById('login-card').classList.remove('hide');
+                    document.getElementById('dashboard-card').classList.add('hide');
+                }
+
+                if (authToken) {
+                    showDashboard();
+                }
+            </script>
+        </body>
+        </html>
+    `);
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`[Cloud Sync API] Central Server active at http://localhost:${PORT}`);

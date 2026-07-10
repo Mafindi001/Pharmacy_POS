@@ -12,6 +12,35 @@
 </head>
 <body>
 
+    <!-- 0. CLOUD ACTIVATION SCREEN OVERLAY -->
+    <div id="activation-screen" class="modal-overlay active">
+        <div class="login-card glass-panel" style="max-width: 440px;">
+            <div class="login-header">
+                <h2>Product Activation</h2>
+                <p>Link Render cloud synchronization parameters to activate this terminal</p>
+            </div>
+            <form id="activation-form">
+                <div class="input-group">
+                    <label for="activation-cloud-url">Central Cloud URL *</label>
+                    <input type="url" id="activation-cloud-url" required placeholder="e.g. https://pharmacy-pos-sync.onrender.com">
+                </div>
+                <div class="input-group">
+                    <label for="activation-store-slug">Store Identifier Slug *</label>
+                    <input type="text" id="activation-store-slug" required placeholder="e.g. downtown-branch">
+                </div>
+                <div class="input-group">
+                    <label for="activation-api-key">Store Secure API Key *</label>
+                    <input type="password" id="activation-api-key" required placeholder="Paste store security token here...">
+                </div>
+                <div id="activation-error" class="error-msg hide" style="color: var(--danger); margin-bottom: 12px; font-size: 0.85rem; font-weight: 600;"></div>
+                <button type="submit" class="btn primary-btn" id="activation-submit-btn" style="margin-top: 8px;">Activate POS Client</button>
+            </form>
+            <div class="login-footer">
+                <p>© 2026 RxPOS. All rights reserved.</p>
+            </div>
+        </div>
+    </div>
+
     <!-- 1. LOGIN SCREEN OVERLAY -->
     <div id="login-screen" class="modal-overlay active">
         <div class="login-card glass-panel">

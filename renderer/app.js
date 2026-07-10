@@ -46,14 +46,34 @@ async function initApp() {
         loadUserSession();
     }
     
-    // Load sync credentials configuration on boot
-    fetchSyncConfig();
-    
-    // Trigger initial pull/push sync sequence
-    executeSyncProcess();
-    
-    // Schedule periodic background database sync worker (every 60 seconds)
-    setInterval(executeSyncProcess, 60000);
+    // Check Activation Status on boot
+    try {
+        const actRes = await fetch('/api/activation-status');
+        if (actRes.ok) {
+            const actData = await actRes.json();
+            const actScreen = document.getElementById('activation-screen');
+            const loginScreen = document.getElementById('login-screen');
+            
+            if (actData.activated) {
+                if (actScreen) actScreen.classList.remove('active');
+                if (loginScreen) loginScreen.classList.add('active');
+                
+                // Load sync credentials configuration
+                fetchSyncConfig();
+                
+                // Trigger initial pull/push sync sequence
+                executeSyncProcess();
+                
+                // Schedule periodic background database sync worker (every 60 seconds)
+                setInterval(executeSyncProcess, 60000);
+            } else {
+                if (actScreen) actScreen.classList.add('active');
+                if (loginScreen) loginScreen.classList.remove('active');
+            }
+        }
+    } catch (e) {
+        console.error("Failed to check activation status:", e);
+    }
 }
 
 function loadUserSession() {
@@ -406,6 +426,77 @@ function setupEventListeners() {
                 }
             } catch (err) {
                 alert(`Error: ${err.message}`);
+            }
+    }
+
+    // Onboarding Activation Form Submit
+    const activationForm = document.getElementById('activation-form');
+    if (activationForm) {
+        activationForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('activation-submit-btn');
+            const errorDiv = document.getElementById('activation-error');
+            
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = "Verifying Credentials...";
+            }
+            if (errorDiv) {
+                errorDiv.classList.add('hide');
+                errorDiv.textContent = "";
+            }
+            
+            const payload = {
+                cloud_url: document.getElementById('activation-cloud-url').value.trim(),
+                store_slug: document.getElementById('activation-store-slug').value.trim(),
+                sync_api_key: document.getElementById('activation-api-key').value.trim()
+            };
+            
+            try {
+                const res = await fetch('/api/activate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (res.ok) {
+                    alert("Activation Successful! Default administrator account initialized.\n\nUsername: admin\nPassword: admin123\n\nPlease log in and update your password.");
+                    
+                    // Reload config parameters inside the settings forms
+                    fetchSyncConfig();
+                    
+                    // Transition to login screen
+                    document.getElementById('activation-screen').classList.remove('active');
+                    document.getElementById('login-screen').classList.add('active');
+                    
+                    // Pre-fill default admin username
+                    const loginUsernameInput = document.getElementById('login-username');
+                    if (loginUsernameInput) {
+                        loginUsernameInput.value = 'admin';
+                        const loginPasswordInput = document.getElementById('login-password');
+                        if (loginPasswordInput) loginPasswordInput.focus();
+                    }
+                    
+                    // Start sync worker execution
+                    executeSyncProcess();
+                } else {
+                    const data = await res.json();
+                    if (errorDiv) {
+                        errorDiv.textContent = data.error || "Activation failed.";
+                        errorDiv.classList.remove('hide');
+                    }
+                }
+            } catch (err) {
+                if (errorDiv) {
+                    errorDiv.textContent = `Network error: ${err.message}. Is your local server running?`;
+                    errorDiv.classList.remove('hide');
+                }
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = "Activate POS Client";
+                }
             }
         });
     }

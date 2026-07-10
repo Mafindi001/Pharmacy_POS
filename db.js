@@ -174,21 +174,7 @@ function initDatabase() {
         try { conn.exec("ROLLBACK;"); } catch(_) {}
     }
 
-    // Seed default users if users table is empty
-    const checkUsers = conn.prepare("SELECT COUNT(*) as count FROM users").get();
-    if (checkUsers.count === 0) {
-        console.log("[Database] Seeding default accounts...");
-        const insertUser = conn.prepare(`
-            INSERT INTO users (username, password_hash, full_name, role)
-            VALUES (?, ?, ?, ?)
-        `);
-
-        // Seed Admin, Pharmacist, Cashier
-        insertUser.run('admin', bcrypt.hashSync('admin123', 10), 'Admin Supervisor', 'ADMIN');
-        insertUser.run('pharmacist', bcrypt.hashSync('rx123', 10), 'Registered Pharmacist', 'PHARMACIST');
-        insertUser.run('cashier', bcrypt.hashSync('cash123', 10), 'Store Cashier', 'CASHIER');
-        console.log("[Database] Accounts seeded successfully.");
-    }
+    // Accounts will be provisioned dynamically upon cloud activation.
 
     // Schema migrations: add minimum_order_quantity column to products table if missing
     try {

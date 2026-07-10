@@ -629,6 +629,73 @@ app.put('/api/users/:id/profile', (req, res) => {
     }
 });
 
+// GET /api/activation-status (Check if store has configured cloud details)
+app.get('/api/activation-status', (req, res) => {
+    const conn = getDbConnection();
+    try {
+        const storeSlug = conn.prepare("SELECT config_value FROM system_config WHERE config_key = 'store_slug'").get();
+        const apiKey = conn.prepare("SELECT config_value FROM system_config WHERE config_key = 'sync_api_key'").get();
+        
+        const isActivated = storeSlug && storeSlug.config_value && apiKey && apiKey.config_value;
+        res.json({ activated: !!isActivated });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/activate (Trigger cloud verification, save credentials, and seed admin account)
+app.post('/api/activate', async (req, res) => {
+    const { cloud_url, store_slug, sync_api_key } = req.body;
+    const conn = getDbConnection();
+    
+    if (!cloud_url || !store_slug || !sync_api_key) {
+        return res.status(400).json({ error: "Missing required activation credentials." });
+    }
+    
+    try {
+        // 1. Send validation request to Render cloud database sync gateway
+        console.log(`[Activation] Verifying store '${store_slug}' against cloud: ${cloud_url}`);
+        const testRes = await fetch(`${cloud_url}/api/sync/pull?since=1970-01-01%2000:00:00`, {
+            method: 'GET',
+            headers: {
+                'X-Store-API-Key': sync_api_key.trim(),
+                'X-Store-Slug': store_slug.trim()
+            }
+        });
+        
+        if (!testRes.ok) {
+            const errData = await testRes.json().catch(() => ({}));
+            return res.status(400).json({ error: errData.error || `Cloud server returned status code ${testRes.status}` });
+        }
+        
+        // 2. Write verified sync details to local system_config table
+        conn.exec("BEGIN TRANSACTION;");
+        conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('cloud_url', ?)").run(cloud_url.trim());
+        conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('store_slug', ?)").run(store_slug.trim());
+        conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('sync_api_key', ?)").run(sync_api_key.trim());
+        
+        // 3. Auto-provision default local admin account if no accounts exist
+        const checkUsers = conn.prepare("SELECT COUNT(*) as count FROM users").get();
+        if (checkUsers.count === 0) {
+            console.log("[Activation] Seeding initial Admin Supervisor account...");
+            const insertUser = conn.prepare(`
+                INSERT INTO users (username, password_hash, full_name, role)
+                VALUES ('admin', ?, 'Admin Supervisor', 'ADMIN')
+            `);
+            const bcrypt = require('bcryptjs');
+            insertUser.run(bcrypt.hashSync('admin123', 10));
+        }
+        
+        conn.exec("COMMIT;");
+        console.log("[Activation] Store activated successfully. Admin seeded.");
+        res.json({ success: true });
+    } catch (err) {
+        try { conn.exec("ROLLBACK;"); } catch(_) {}
+        console.error("[Activation] Failed:", err.message);
+        res.status(500).json({ error: `Connection failed: ${err.message}. Is the cloud server URL correct and online?` });
+    }
+});
+
 // GET /api/config (Retrieve local sync credentials)
 app.get('/api/config', (req, res) => {
     const conn = getDbConnection();
