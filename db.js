@@ -355,7 +355,18 @@ function getDailyMarginsReport() {
                COUNT(DISTINCT i.id) as invoice_count,
                SUM(ii.quantity_sold * ii.unit_price) as total_revenue,
                SUM(ii.quantity_sold * b.cost_price) as total_cogs,
-               SUM(ii.quantity_sold * ii.unit_price) - SUM(ii.quantity_sold * b.cost_price) as net_profit
+               SUM(ii.quantity_sold * ii.unit_price) - SUM(ii.quantity_sold * b.cost_price) as net_profit,
+               (
+                   SELECT GROUP_CONCAT(name_qty, ', ') FROM (
+                       SELECT p.product_name || ' (x' || SUM(ii2.quantity_sold) || ')' as name_qty
+                       FROM invoice_items ii2
+                       JOIN invoices i2 ON ii2.invoice_id = i2.id
+                       JOIN products p ON ii2.product_id = p.id
+                       WHERE DATE(i2.created_at) = DATE(i.created_at)
+                       GROUP BY p.id
+                       ORDER BY SUM(ii2.quantity_sold) DESC
+                   )
+               ) as products_sold
         FROM invoices i
         JOIN invoice_items ii ON i.id = ii.invoice_id
         JOIN product_batches b ON ii.batch_id = b.id

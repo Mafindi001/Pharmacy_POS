@@ -1479,14 +1479,15 @@ async function syncReportsAnalyticsData() {
             const tbody = document.getElementById('report-margins-tbody');
             tbody.innerHTML = '';
             if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--muted);">No transaction logs recorded.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--muted);">No transaction logs recorded.</td></tr>';
             } else {
                 data.forEach(row => {
                     const marginPercent = row.total_revenue > 0 ? ((row.net_profit / row.total_revenue) * 100).toFixed(1) : '0.0';
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td><strong>${row.sales_date}</strong></td>
+                        <td><strong>${escapeHtml(row.sales_date)}</strong></td>
                         <td>${row.invoice_count}</td>
+                        <td style="max-width: 320px; white-space: normal; font-size: 0.82rem; color: var(--muted);" title="${escapeHtml(row.products_sold || '')}">${escapeHtml(row.products_sold) || '-'}</td>
                         <td>₦${row.total_revenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         <td>₦${row.total_cogs.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         <td><strong style="color: var(--safe);">₦${row.net_profit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
