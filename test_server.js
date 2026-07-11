@@ -1,9 +1,15 @@
 const fs = require('fs');
 const path = require('path');
-const { 
-    initDatabase, 
-    getDbConnection, 
-    allocateFEFOBatches, 
+const os = require('os');
+const http = require('http');
+
+// Isolate tests from the live database — must be set BEFORE requiring ./db
+process.env.PHARMACY_DB_PATH = path.join(os.tmpdir(), `rxpos_test_${process.pid}.db`);
+
+const {
+    initDatabase,
+    getDbConnection,
+    allocateFEFOBatches,
     verifySupervisorOverride,
     getNearExpiryAlerts,
     getLowStockAlerts,
@@ -47,7 +53,14 @@ async function runTests() {
     // 2. Initialize Database & Seed Users
     initDatabase();
     const conn = getDbConnection();
-    console.log("[Test] Schema initialized and seeded.");
+
+    // Seed staff accounts (ids 1-3) referenced by ledger/invoice foreign keys
+    const bcryptSeed = require('bcryptjs');
+    const seedUser = conn.prepare("INSERT INTO users (username, password_hash, full_name, role) VALUES (?, ?, ?, ?)");
+    seedUser.run('admin', bcryptSeed.hashSync('adminpass', 10), 'Seed Admin', 'ADMIN');           // id 1
+    seedUser.run('pharma', bcryptSeed.hashSync('pharmapass', 10), 'Seed Pharmacist', 'PHARMACIST'); // id 2
+    seedUser.run('cashier', bcryptSeed.hashSync('cashierpass', 10), 'Seed Cashier', 'CASHIER');    // id 3
+    console.log("[Test] Schema initialized and staff seeded.");
 
     // 3. Register Test Products
     console.log("[Test] Seeding products...");
@@ -277,6 +290,80 @@ async function runTests() {
         console.error("✗ TEST 4 FAILED:", e.message);
         process.exit(1);
     }
+
+    // ==========================================
+    // TEST AREA 5: HTTP AUTH & ROLE-BASED ACCESS CONTROL
+    // ==========================================
+    console.log("\n[TEST 5] Testing API authentication & RBAC...");
+    let server;
+    try {
+        const bcrypt = require('bcryptjs');
+        // Seed a known admin and a cashier for auth checks
+        conn.prepare("INSERT INTO users (username, password_hash, full_name, role) VALUES (?, ?, ?, 'ADMIN')")
+            .run('t_admin', bcrypt.hashSync('adminpass', 10), 'Test Admin');
+        conn.prepare("INSERT INTO users (username, password_hash, full_name, role) VALUES (?, ?, ?, 'CASHIER')")
+            .run('t_cashier', bcrypt.hashSync('cashierpass', 10), 'Test Cashier');
+
+        const { app } = require('./server');
+        await new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
+        const base = `http://127.0.0.1:${server.address().port}`;
+
+        const call = (method, route, body, token) => new Promise((resolve, reject) => {
+            const payload = body ? JSON.stringify(body) : null;
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const req = http.request(`${base}${route}`, { method, headers }, (res) => {
+                let data = '';
+                res.on('data', c => data += c);
+                res.on('end', () => resolve({ status: res.statusCode, body: data ? JSON.parse(data) : {}, contentType: res.headers['content-type'] }));
+            });
+            req.on('error', reject);
+            if (payload) req.write(payload);
+            req.end();
+        });
+
+        // 5a. Protected route without a token → 401
+        const noAuth = await call('GET', '/api/products');
+        if (noAuth.status !== 401) throw new Error(`Unauthenticated /api/products should be 401, got ${noAuth.status}`);
+        console.log("✓ 5a: Unauthenticated request rejected (401).");
+
+        // 5b. Bad credentials → 401
+        const badLogin = await call('POST', '/api/auth/login', { username: 't_admin', password: 'wrong' });
+        if (badLogin.status !== 401) throw new Error(`Bad login should be 401, got ${badLogin.status}`);
+        console.log("✓ 5b: Invalid credentials rejected (401).");
+
+        // 5c. Valid login → token issued
+        const adminLogin = await call('POST', '/api/auth/login', { username: 't_admin', password: 'adminpass' });
+        if (adminLogin.status !== 200 || !adminLogin.body.token) throw new Error("Admin login should return a token.");
+        const adminToken = adminLogin.body.token;
+        console.log("✓ 5c: Valid login issues a session token.");
+
+        // 5d. Authenticated request → 200
+        const withAuth = await call('GET', '/api/products', null, adminToken);
+        if (withAuth.status !== 200) throw new Error(`Authenticated /api/products should be 200, got ${withAuth.status}`);
+        console.log("✓ 5d: Authenticated request accepted (200).");
+
+        // 5e. Cashier hitting an ADMIN-only route → 403
+        const cashierLogin = await call('POST', '/api/auth/login', { username: 't_cashier', password: 'cashierpass' });
+        const cashierToken = cashierLogin.body.token;
+        const forbidden = await call('GET', '/api/users', null, cashierToken);
+        if (forbidden.status !== 403) throw new Error(`Cashier /api/users should be 403, got ${forbidden.status}`);
+        console.log("✓ 5e: Role guard blocks cashier from admin route (403).");
+
+        // 5f. Unknown API route returns JSON 404 (not the SPA shell)
+        const unknown = await call('GET', '/api/does-not-exist', null, adminToken);
+        if (unknown.status !== 404 || !unknown.contentType.includes('application/json')) {
+            throw new Error(`Unknown API route should be JSON 404, got ${unknown.status} ${unknown.contentType}`);
+        }
+        console.log("✓ 5f: Unknown API route returns JSON 404.");
+
+        console.log("✓ TEST 5 SUCCESS: API auth and RBAC enforced correctly!");
+    } catch (e) {
+        console.error("✗ TEST 5 FAILED:", e.message);
+        if (server) server.close();
+        process.exit(1);
+    }
+    if (server) server.close();
 
     console.log("\n==========================================");
     console.log("ALL POS INTEGRATION TESTS PASSED SUCCESSFULLY!");
