@@ -19,43 +19,30 @@ if (process.env.DATABASE_URL) {
         dbUrl = dbUrl + separator + 'sslmode=no-verify';
     }
 
+    // Connect to Postgres by HOSTNAME (not a resolved IP). Supabase's Supavisor
+    // pooler routes each tenant by the connection hostname/username, so replacing
+    // the host with a raw IP breaks routing ("Tenant or user not found"). IPv4 is
+    // preferred globally via dns.setDefaultResultOrder('ipv4first') above, which is
+    // all Render (IPv4-only egress) needs — provided DATABASE_URL points at the
+    // Supabase POOLER host (aws-0-<region>.pooler.supabase.com), not the IPv6-only
+    // direct host (db.<ref>.supabase.co).
     const { Pool } = require('pg');
     pool = new Pool({
         connectionString: dbUrl,
-        ssl: {
-            rejectUnauthorized: false
-        },
-        stream: () => {
-            const net = require('net');
-            const socket = new net.Socket();
-            const originalConnect = socket.connect;
-            socket.connect = function(port, host, cb) {
-                const targetHost = typeof port === 'object' ? port.host : host;
-                const targetPort = typeof port === 'object' ? port.port : port;
-                const targetCb = typeof port === 'object' ? host : cb;
-
-                if (targetHost && typeof targetHost === 'string') {
-                    const dns = require('dns');
-                    dns.lookup(targetHost, { family: 4 }, (err, address) => {
-                        if (!err && address) {
-                            return originalConnect.call(this, { port: targetPort, host: address, family: 4 }, targetCb);
-                        } else {
-                            return originalConnect.call(this, { port: targetPort, host: targetHost }, targetCb);
-                        }
-                    });
-                    return this;
-                } else {
-                    if (typeof port === 'object') {
-                        return originalConnect.call(this, port, cb);
-                    } else {
-                        return originalConnect.call(this, { port, host }, cb);
-                    }
-                }
-            };
-            return socket;
-        }
+        ssl: { rejectUnauthorized: false }
     });
+
+    pool.on('error', (err) => {
+        console.error("[Cloud Database] Idle client error:", err.message);
+    });
+
     usePostgres = true;
+
+    // Warn early if the connection string looks like the IPv6-only direct endpoint,
+    // which cannot work on IPv4-only hosts like Render's free tier.
+    if (/db\.[a-z0-9]+\.supabase\.co/i.test(dbUrl)) {
+        console.warn("[Cloud Database] WARNING: DATABASE_URL uses the Supabase DIRECT host (db.<ref>.supabase.co), which is IPv6-only and will fail on IPv4-only hosts. Use the Session/Transaction POOLER connection string instead (aws-0-<region>.pooler.supabase.com).");
+    }
     console.log("[Cloud Database] Configured to connect to PostgreSQL central cluster.");
 } else {
     const { DatabaseSync } = require('node:sqlite');

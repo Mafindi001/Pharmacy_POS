@@ -21,39 +21,13 @@ if (connectionString.includes('sslmode=')) {
     connectionString = connectionString + separator + 'sslmode=no-verify';
 }
 
+// Connect by hostname (IPv4 preferred via dns.setDefaultResultOrder above) so the
+// Supabase pooler can route the tenant. Use the POOLER connection string, not the
+// IPv6-only direct host, when running from an IPv4-only network.
 const client = new Client({
     connectionString: connectionString,
     ssl: {
         rejectUnauthorized: false
-    },
-    stream: () => {
-        const net = require('net');
-        const socket = new net.Socket();
-        const originalConnect = socket.connect;
-        socket.connect = function(port, host, cb) {
-            const targetHost = typeof port === 'object' ? port.host : host;
-            const targetPort = typeof port === 'object' ? port.port : port;
-            const targetCb = typeof port === 'object' ? host : cb;
-
-            if (targetHost && typeof targetHost === 'string') {
-                const dns = require('dns');
-                dns.lookup(targetHost, { family: 4 }, (err, address) => {
-                    if (!err && address) {
-                        return originalConnect.call(this, { port: targetPort, host: address, family: 4 }, targetCb);
-                    } else {
-                        return originalConnect.call(this, { port: targetPort, host: targetHost }, targetCb);
-                    }
-                });
-                return this;
-            } else {
-                if (typeof port === 'object') {
-                    return originalConnect.call(this, port, cb);
-                } else {
-                    return originalConnect.call(this, { port, host }, cb);
-                }
-            }
-        };
-        return socket;
     }
 });
 
