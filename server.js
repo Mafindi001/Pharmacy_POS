@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { 
     initDatabase, 
     getDbConnection, 
@@ -19,6 +20,65 @@ app.use(express.json());
 
 // Initialize database & tables
 initDatabase();
+
+// ==========================================
+// SESSION AUTH & ROLE-BASED ACCESS CONTROL
+// ==========================================
+const sessions = new Map(); // token -> { id, username, full_name, role, issuedAt }
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12-hour shift window
+
+function issueSession(user) {
+    const token = crypto.randomBytes(32).toString('hex');
+    sessions.set(token, {
+        id: user.id,
+        username: user.username,
+        full_name: user.full_name,
+        role: user.role,
+        issuedAt: Date.now()
+    });
+    return token;
+}
+
+/**
+ * requireAuth(...roles) — Express middleware factory.
+ * No roles = any authenticated user; otherwise the session role must match.
+ */
+function requireAuth(...roles) {
+    return (req, res, next) => {
+        const header = req.headers['authorization'] || '';
+        const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+        const sess = token ? sessions.get(token) : null;
+
+        if (!sess || (Date.now() - sess.issuedAt) > SESSION_TTL_MS) {
+            if (token) sessions.delete(token);
+            return res.status(401).json({ error: "Authentication required. Please log in." });
+        }
+        if (roles.length > 0 && !roles.includes(sess.role)) {
+            return res.status(403).json({ error: "Insufficient permissions for this operation." });
+        }
+        req.user = sess;
+        next();
+    };
+}
+
+// Login brute-force throttle: 5 failures per username+IP, 15 minute lockout
+const failedLogins = new Map(); // key -> { count, lockedUntil }
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
+
+function loginThrottleKey(req, username) {
+    return `${req.ip}|${(username || '').toLowerCase()}`;
+}
+
+/**
+ * Queue a change event for the cloud sync worker. Must be called inside the
+ * caller's open transaction so the queue entry commits atomically with the data.
+ */
+function enqueueSyncEvent(conn, tableName, recordId, actionType, payload) {
+    conn.prepare(
+        "INSERT INTO sync_queue (table_name, record_id, action_type, payload) VALUES (?, ?, ?, ?)"
+    ).run(tableName, String(recordId), actionType, JSON.stringify(payload));
+}
 
 // 1. UTILITY: Get Local LAN IP Address
 function getLocalIpAddress() {
@@ -47,34 +107,57 @@ app.get('/api/network-ip', (req, res) => {
 app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
     const conn = getDbConnection();
-    
+
+    // Brute-force lockout check
+    const throttleKey = loginThrottleKey(req, username);
+    const attempts = failedLogins.get(throttleKey);
+    if (attempts && attempts.lockedUntil && Date.now() < attempts.lockedUntil) {
+        const waitMins = Math.ceil((attempts.lockedUntil - Date.now()) / 60000);
+        return res.status(429).json({ error: `Too many failed attempts. Try again in ${waitMins} minute(s).` });
+    }
+
     try {
         const user = conn.prepare("SELECT id, username, password_hash, full_name, role, is_active FROM users WHERE username = ?").get(username);
-        
-        if (!user || user.is_active === 0) {
+
+        const bcrypt = require('bcryptjs');
+        const isPasswordValid = user && user.is_active === 1 && bcrypt.compareSync(password || '', user.password_hash);
+
+        if (!isPasswordValid) {
+            const rec = failedLogins.get(throttleKey) || { count: 0, lockedUntil: 0 };
+            rec.count += 1;
+            if (rec.count >= LOGIN_MAX_ATTEMPTS) {
+                rec.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+                rec.count = 0;
+            }
+            failedLogins.set(throttleKey, rec);
             return res.status(401).json({ error: "Invalid credentials or inactive account" });
         }
-        
-        const bcrypt = require('bcryptjs');
-        const isPasswordValid = bcrypt.compareSync(password, user.password_hash);
-        
-        if (!isPasswordValid) {
-            return res.status(401).json({ error: "Invalid credentials" });
-        }
-        
+
+        failedLogins.delete(throttleKey);
+        const token = issueSession(user);
+
         res.json({
             id: user.id,
             username: user.username,
             full_name: user.full_name,
-            role: user.role
+            role: user.role,
+            token
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
+// Invalidate the current session token
+app.post('/api/auth/logout', requireAuth(), (req, res) => {
+    const header = req.headers['authorization'] || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    if (token) sessions.delete(token);
+    res.json({ success: true });
+});
+
 // Verify Supervisor Override credentials
-app.post('/api/auth/override', (req, res) => {
+app.post('/api/auth/override', requireAuth(), (req, res) => {
     const { username, password } = req.body;
     const result = verifySupervisorOverride(username, password);
     if (result.success) {
@@ -85,7 +168,7 @@ app.post('/api/auth/override', (req, res) => {
 });
 
 // 4. ENDPOINT: Products CRUD & Search
-app.get('/api/products', (req, res) => {
+app.get('/api/products', requireAuth(), (req, res) => {
     const { search } = req.query;
     const conn = getDbConnection();
     
@@ -117,7 +200,7 @@ app.get('/api/products', (req, res) => {
     }
 });
 
-app.post('/api/products', (req, res) => {
+app.post('/api/products', requireAuth('ADMIN', 'PHARMACIST'), (req, res) => {
     const { 
         product_name, generic_name, sku, barcode, category, form, 
         pack_size, base_unit_multiplier, reorder_level, is_prescription_required,
@@ -168,7 +251,13 @@ app.post('/api/products', (req, res) => {
             `);
             insertLedger.run(productId, batchId, initialQty);
         }
-        
+
+        // Queue product + initial batch for cloud upload
+        const newProduct = conn.prepare("SELECT * FROM products WHERE id = ?").get(productId);
+        const newBatch = conn.prepare("SELECT * FROM product_batches WHERE id = ?").get(batchId);
+        enqueueSyncEvent(conn, 'products', productId, 'INSERT', newProduct);
+        enqueueSyncEvent(conn, 'product_batches', batchId, 'INSERT', newBatch);
+
         conn.exec("COMMIT;");
         res.json({ success: true, productId: productId });
     } catch (err) {
@@ -177,7 +266,7 @@ app.post('/api/products', (req, res) => {
     }
 });
 
-app.put('/api/products/:id', (req, res) => {
+app.put('/api/products/:id', requireAuth('ADMIN', 'PHARMACIST'), (req, res) => {
     const id = req.params.id;
     const { 
         product_name, generic_name, category, form, 
@@ -230,7 +319,15 @@ app.put('/api/products/:id', (req, res) => {
             `);
             insertBatch.run(id, costVal, sellVal);
         }
-        
+
+        // Queue updated product + its pricing batch for cloud upload
+        const updatedProduct = conn.prepare("SELECT * FROM products WHERE id = ?").get(id);
+        if (updatedProduct) {
+            enqueueSyncEvent(conn, 'products', id, 'UPDATE', updatedProduct);
+            const pricingBatch = conn.prepare("SELECT * FROM product_batches WHERE product_id = ? AND batch_number = 'BATCH-INIT'").get(id);
+            if (pricingBatch) enqueueSyncEvent(conn, 'product_batches', pricingBatch.id, 'UPDATE', pricingBatch);
+        }
+
         conn.exec("COMMIT;");
         res.json({ success: true });
     } catch (err) {
@@ -240,7 +337,7 @@ app.put('/api/products/:id', (req, res) => {
 });
 
 // DELETE /api/products/:id (Delete product registry entry)
-app.delete('/api/products/:id', (req, res) => {
+app.delete('/api/products/:id', requireAuth('ADMIN', 'PHARMACIST'), (req, res) => {
     const id = req.params.id;
     const conn = getDbConnection();
     
@@ -250,6 +347,7 @@ app.delete('/api/products/:id', (req, res) => {
         // Check if there are active sales using this product
         const salesCount = conn.prepare("SELECT COUNT(*) as count FROM invoice_items WHERE product_id = ?").get(id);
         if (salesCount.count > 0) {
+            conn.exec("ROLLBACK;"); // Close the open transaction before early return
             return res.status(400).json({ error: "Cannot delete product. It has associated sales transactions." });
         }
         
@@ -268,7 +366,7 @@ app.delete('/api/products/:id', (req, res) => {
 });
 
 // 5. ENDPOINT: Batches Retrieval & Storage
-app.get('/api/products/:productId/batches', (req, res) => {
+app.get('/api/products/:productId/batches', requireAuth(), (req, res) => {
     const productId = req.params.productId;
     const conn = getDbConnection();
     
@@ -285,11 +383,31 @@ app.get('/api/products/:productId/batches', (req, res) => {
     }
 });
 
-app.post('/api/batches', (req, res) => {
-    const { 
-        product_id, batch_number, expiry_date, quantity_on_hand, 
-        cost_price, selling_price, supplier_name, user_id 
+// GET /api/batches (All batches with stock, joined with product identity)
+app.get('/api/batches', requireAuth(), (req, res) => {
+    const conn = getDbConnection();
+    try {
+        const batches = conn.prepare(`
+            SELECT b.id, b.product_id, b.batch_number, b.expiry_date, b.quantity_on_hand,
+                   b.cost_price, b.selling_price, b.supplier_name, b.received_date,
+                   p.product_name, p.generic_name, p.sku
+            FROM product_batches b
+            JOIN products p ON b.product_id = p.id
+            WHERE b.quantity_on_hand > 0
+            ORDER BY b.expiry_date ASC
+        `).all();
+        res.json(batches);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/batches', requireAuth('ADMIN', 'PHARMACIST'), (req, res) => {
+    const {
+        product_id, batch_number, expiry_date, quantity_on_hand,
+        cost_price, selling_price, supplier_name
     } = req.body;
+    const user_id = req.user.id; // Identity comes from the session, never the client payload
     
     const conn = getDbConnection();
     
@@ -324,7 +442,11 @@ app.post('/api/batches', (req, res) => {
             VALUES (?, ?, 'SUPPLIER_RESTOCK', ?, 'SUPPLIER_INCOMING', ?)
         `);
         insertLedger.run(product_id, batchId, quantity_on_hand, user_id || 1);
-        
+
+        // Queue restocked batch for cloud upload
+        const restockedBatch = conn.prepare("SELECT * FROM product_batches WHERE id = ?").get(batchId);
+        enqueueSyncEvent(conn, 'product_batches', batchId, 'UPDATE', restockedBatch);
+
         conn.exec("COMMIT;");
         res.json({ success: true, batchId: batchId });
     } catch (err) {
@@ -334,32 +456,46 @@ app.post('/api/batches', (req, res) => {
 });
 
 // 6. ENDPOINT: POS Cart Checkout Processing
-app.post('/api/checkout', (req, res) => {
-    const { 
-        user_id, customer_name, customer_phone, payment_method, 
-        items, doctor_name, doctor_license_number 
+app.post('/api/checkout', requireAuth('ADMIN', 'PHARMACIST', 'CASHIER', 'SALES'), (req, res) => {
+    const {
+        customer_name, customer_phone, payment_method,
+        items, doctor_name, doctor_license_number
     } = req.body;
-    
+    const user_id = req.user.id; // Identity comes from the session, never the client payload
+
     const conn = getDbConnection();
     
     try {
         conn.exec("BEGIN TRANSACTION;");
         
-        // Compute serial invoice number (INV-YYYYMMDD-XXXX)
+        // Compute serial invoice number (INV-YYYYMMDD-XXXX) from today's highest
+        // sequence (not COUNT), retrying on UNIQUE collisions from concurrent terminals.
         const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
-        const todayCountRow = conn.prepare("SELECT COUNT(*) as count FROM invoices WHERE DATE(created_at) = DATE('now')").get();
-        const seq = String(todayCountRow.count + 1).padStart(4, '0');
-        const invoiceNumber = `INV-${dateStr}-${seq}`;
-        
-        // 1. Create invoice parent row
+        const maxRow = conn.prepare(
+            "SELECT MAX(CAST(SUBSTR(invoice_number, -4) AS INTEGER)) as max_seq FROM invoices WHERE invoice_number LIKE ?"
+        ).get(`INV-${dateStr}-%`);
+        let nextSeq = (maxRow && maxRow.max_seq ? maxRow.max_seq : 0) + 1;
+
         const insertInvoice = conn.prepare(`
             INSERT INTO invoices (invoice_number, user_id, customer_name, customer_phone, total_amount, payment_method, doctor_name, doctor_license_number)
             VALUES (?, ?, ?, ?, 0.0, ?, ?, ?)
         `);
-        const invResult = insertInvoice.run(
-            invoiceNumber, user_id, customer_name || 'Walk-in Customer', 
-            customer_phone || null, payment_method, doctor_name || null, doctor_license_number || null
-        );
+
+        // 1. Create invoice parent row (retry a few times if another terminal grabbed the number)
+        let invoiceNumber, invResult;
+        for (let attempt = 0; attempt < 5; attempt++) {
+            invoiceNumber = `INV-${dateStr}-${String(nextSeq).padStart(4, '0')}`;
+            try {
+                invResult = insertInvoice.run(
+                    invoiceNumber, user_id, customer_name || 'Walk-in Customer',
+                    customer_phone || null, payment_method, doctor_name || null, doctor_license_number || null
+                );
+                break;
+            } catch (e) {
+                if (attempt === 4 || !/UNIQUE/i.test(e.message)) throw e;
+                nextSeq++;
+            }
+        }
         const invoiceId = invResult.lastInsertRowid;
         
         let totalAmount = 0.0;
@@ -449,7 +585,7 @@ app.post('/api/checkout', (req, res) => {
 });
 
 // 7. ENDPOINTS: Analytics Reports & Views
-app.get('/api/reports/near-expiry', (req, res) => {
+app.get('/api/reports/near-expiry', requireAuth(), (req, res) => {
     try {
         const alerts = getNearExpiryAlerts();
         res.json(alerts);
@@ -458,7 +594,7 @@ app.get('/api/reports/near-expiry', (req, res) => {
     }
 });
 
-app.get('/api/reports/low-stock', (req, res) => {
+app.get('/api/reports/low-stock', requireAuth(), (req, res) => {
     try {
         const queue = getLowStockAlerts();
         res.json(queue);
@@ -467,7 +603,7 @@ app.get('/api/reports/low-stock', (req, res) => {
     }
 });
 
-app.get('/api/reports/dead-stock', (req, res) => {
+app.get('/api/reports/dead-stock', requireAuth('ADMIN', 'PHARMACIST', 'ACCOUNTING'), (req, res) => {
     try {
         const dead = getDeadStock();
         res.json(dead);
@@ -476,7 +612,7 @@ app.get('/api/reports/dead-stock', (req, res) => {
     }
 });
 
-app.get('/api/reports/daily-margins', (req, res) => {
+app.get('/api/reports/daily-margins', requireAuth('ADMIN', 'PHARMACIST', 'ACCOUNTING'), (req, res) => {
     try {
         const report = getDailyMarginsReport();
         res.json(report);
@@ -486,7 +622,7 @@ app.get('/api/reports/daily-margins', (req, res) => {
 });
 
 // GET /api/reports/sales-ledger (Today's sale list with date filters)
-app.get('/api/reports/sales-ledger', (req, res) => {
+app.get('/api/reports/sales-ledger', requireAuth('ADMIN', 'PHARMACIST', 'CASHIER', 'SALES', 'ACCOUNTING'), (req, res) => {
     const { filter } = req.query;
     const conn = getDbConnection();
     
@@ -529,7 +665,7 @@ app.get('/api/reports/sales-ledger', (req, res) => {
 });
 
 // GET /api/users (List all system staff accounts)
-app.get('/api/users', (req, res) => {
+app.get('/api/users', requireAuth('ADMIN'), (req, res) => {
     const conn = getDbConnection();
     try {
         const users = conn.prepare("SELECT id, username, full_name, role, is_active FROM users").all();
@@ -540,7 +676,7 @@ app.get('/api/users', (req, res) => {
 });
 
 // POST /api/users (Create a new system user account)
-app.post('/api/users', (req, res) => {
+app.post('/api/users', requireAuth('ADMIN'), (req, res) => {
     const { username, password, full_name, role } = req.body;
     const conn = getDbConnection();
     const bcrypt = require('bcryptjs');
@@ -565,7 +701,7 @@ app.post('/api/users', (req, res) => {
 });
 
 // PUT /api/users/:id (Toggle status active/inactive)
-app.put('/api/users/:id', (req, res) => {
+app.put('/api/users/:id', requireAuth('ADMIN'), (req, res) => {
     const id = req.params.id;
     const { is_active } = req.body;
     const conn = getDbConnection();
@@ -580,7 +716,7 @@ app.put('/api/users/:id', (req, res) => {
 });
 
 // PUT /api/users/:id/reset-password (Reset system user's password)
-app.put('/api/users/:id/reset-password', (req, res) => {
+app.put('/api/users/:id/reset-password', requireAuth('ADMIN'), (req, res) => {
     const id = req.params.id;
     const { password } = req.body;
     const conn = getDbConnection();
@@ -601,8 +737,12 @@ app.put('/api/users/:id/reset-password', (req, res) => {
 });
 
 // PUT /api/users/:id/profile (Update display name and/or password for the profile modal)
-app.put('/api/users/:id/profile', (req, res) => {
+app.put('/api/users/:id/profile', requireAuth(), (req, res) => {
     const id = req.params.id;
+    // Staff may only edit their own profile; admins may edit anyone's
+    if (req.user.role !== 'ADMIN' && String(req.user.id) !== String(id)) {
+        return res.status(403).json({ error: "You can only update your own profile." });
+    }
     const { full_name, password } = req.body;
     const conn = getDbConnection();
     const bcrypt = require('bcryptjs');
@@ -701,7 +841,7 @@ app.post('/api/activate', async (req, res) => {
 });
 
 // GET /api/config (Retrieve local sync credentials)
-app.get('/api/config', (req, res) => {
+app.get('/api/config', requireAuth(), (req, res) => {
     const conn = getDbConnection();
     try {
         const rows = conn.prepare("SELECT config_key, config_value FROM system_config").all();
@@ -714,7 +854,7 @@ app.get('/api/config', (req, res) => {
 });
 
 // POST /api/config (Update local sync credentials)
-app.post('/api/config', (req, res) => {
+app.post('/api/config', requireAuth('ADMIN'), (req, res) => {
     const { store_slug, sync_api_key, cloud_url } = req.body;
     const conn = getDbConnection();
     try {
@@ -731,7 +871,7 @@ app.post('/api/config', (req, res) => {
 });
 
 // GET /api/sync/queue (Retrieve pending queue events for push)
-app.get('/api/sync/queue', (req, res) => {
+app.get('/api/sync/queue', requireAuth(), (req, res) => {
     const conn = getDbConnection();
     try {
         const rows = conn.prepare("SELECT id, table_name, record_id, action_type, payload FROM sync_queue WHERE status = 'pending' ORDER BY id ASC LIMIT 50").all();
@@ -742,7 +882,7 @@ app.get('/api/sync/queue', (req, res) => {
 });
 
 // POST /api/sync/queue/ack (Acknowledge and mark events as synced)
-app.post('/api/sync/queue/ack', (req, res) => {
+app.post('/api/sync/queue/ack', requireAuth(), (req, res) => {
     const { ids } = req.body;
     const conn = getDbConnection();
     if (!ids || !Array.isArray(ids)) {
@@ -763,7 +903,7 @@ app.post('/api/sync/queue/ack', (req, res) => {
 });
 
 // POST /api/sync/queue/fail (Mark event as failed with error msg)
-app.post('/api/sync/queue/fail', (req, res) => {
+app.post('/api/sync/queue/fail', requireAuth(), (req, res) => {
     const { id, error } = req.body;
     const conn = getDbConnection();
     try {
@@ -776,7 +916,8 @@ app.post('/api/sync/queue/fail', (req, res) => {
 });
 
 // POST /api/sync/apply (Apply cloud pulled data changes locally)
-app.post('/api/sync/apply', (req, res) => {
+// Applying pulled cloud data mutates products/batches/users — restricted to supervisory roles
+app.post('/api/sync/apply', requireAuth('ADMIN', 'PHARMACIST'), (req, res) => {
     const { products, product_batches, users, last_sync_timestamp } = req.body;
     const conn = getDbConnection();
     
@@ -821,6 +962,11 @@ app.post('/api/sync/apply', (req, res) => {
             for (const u of users) {
                 stmt.run(u.id, u.username, u.password_hash, u.full_name, u.role, u.is_active || 1);
             }
+            // Safety invariant: pulled data must never lock everyone out of this terminal
+            const adminCheck = conn.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'ADMIN' AND is_active = 1").get();
+            if (adminCheck.count === 0) {
+                throw new Error("Sync rejected: incoming user data would remove the last active ADMIN on this terminal.");
+            }
         }
         
         // 4. Update the sync timestamp
@@ -839,6 +985,11 @@ app.post('/api/sync/apply', (req, res) => {
 
 // Serve frontend static files
 app.use(express.static(path.join(__dirname, 'renderer')));
+
+// Unknown API routes must return JSON, never the SPA shell
+app.use('/api', (req, res) => {
+    res.status(404).json({ error: `Unknown API route: ${req.method} ${req.originalUrl}` });
+});
 
 // Catch-all route to serve the SPA
 app.get('*', (req, res) => {
@@ -867,3 +1018,11 @@ function startServer(port) {
 }
 
 module.exports = { app, startServer };
+
+// Allow standalone execution: `node server.js` / `npm run server`
+if (require.main === module) {
+    startServer(parseInt(process.env.PORT, 10) || 8080).catch(err => {
+        console.error("[Express] Failed to start server:", err);
+        process.exit(1);
+    });
+}

@@ -18,7 +18,8 @@ if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const dbPath = path.join(dbDir, 'inventory.db');
+// PHARMACY_DB_PATH lets tests point at an isolated database instead of live data.
+const dbPath = process.env.PHARMACY_DB_PATH || path.join(dbDir, 'inventory.db');
 console.log(`[Database] Localization Path: ${dbPath}`);
 
 // Initialize connection

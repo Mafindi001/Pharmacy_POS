@@ -64,8 +64,8 @@ function performDbBackup() {
                 filePath: path.join(backupsDir, file),
                 mtime: fs.statSync(path.join(backupsDir, file)).mtime.getTime()
             }))
-            .sort((a, b) => b.mtime - a.mtime); // Oldest first
-            
+            .sort((a, b) => a.mtime - b.mtime); // Oldest first
+
         if (backupFiles.length > 10) {
             const countToDelete = backupFiles.length - 10;
             console.log(`[Backup] Total backups count ${backupFiles.length}. Deleting oldest ${countToDelete} backups...`);
