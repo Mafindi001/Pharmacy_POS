@@ -1,3 +1,24 @@
+// Minimal .env loader (no dependency) — must run before anything reads process.env.
+// Lets operators keep CLOUD_ADMIN_PASS / DATABASE_URL out of source control.
+(function loadDotEnv() {
+    const fs = require('fs');
+    const path = require('path');
+    const envPath = path.join(__dirname, '.env');
+    if (!fs.existsSync(envPath)) return;
+    for (const rawLine of fs.readFileSync(envPath, 'utf8').split('\n')) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#')) continue;
+        const eq = line.indexOf('=');
+        if (eq === -1) continue;
+        const key = line.slice(0, eq).trim();
+        let value = line.slice(eq + 1).trim();
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+        }
+        if (key && process.env[key] === undefined) process.env[key] = value;
+    }
+})();
+
 const express = require('express');
 const dns = require('dns');
 
