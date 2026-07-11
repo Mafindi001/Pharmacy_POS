@@ -940,10 +940,20 @@ app.post('/api/sync/apply', requireAuth('ADMIN', 'PHARMACIST'), (req, res) => {
         }
         
         // 2. Apply Batches Updates/Inserts
+        // Preserve locally-tracked quantity_on_hand — this terminal is the source of
+        // truth for stock (sales decrement it here). Cloud only overrides catalog/pricing.
         if (product_batches && Array.isArray(product_batches)) {
             const stmt = conn.prepare(`
-                INSERT OR REPLACE INTO product_batches (id, product_id, batch_number, expiry_date, quantity_on_hand, cost_price, selling_price, supplier_name, received_date)
+                INSERT INTO product_batches (id, product_id, batch_number, expiry_date, quantity_on_hand, cost_price, selling_price, supplier_name, received_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    product_id = excluded.product_id,
+                    batch_number = excluded.batch_number,
+                    expiry_date = excluded.expiry_date,
+                    cost_price = excluded.cost_price,
+                    selling_price = excluded.selling_price,
+                    supplier_name = excluded.supplier_name,
+                    received_date = excluded.received_date
             `);
             for (const b of product_batches) {
                 stmt.run(
@@ -1007,8 +1017,10 @@ function startServer(port) {
         });
         
         server.on('error', (err) => {
-            if (err.code === 'EADDRINUSE') {
-                console.warn(`[Express] Port ${port} is in use, trying ${port + 1}...`);
+            // EADDRINUSE: another process holds the port. EACCES: the port is in a
+            // Windows excluded/privileged range. Either way, try the next port.
+            if ((err.code === 'EADDRINUSE' || err.code === 'EACCES') && port < 8099) {
+                console.warn(`[Express] Port ${port} unavailable (${err.code}), trying ${port + 1}...`);
                 resolve(startServer(port + 1));
             } else {
                 reject(err);
