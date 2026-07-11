@@ -71,6 +71,22 @@ function loginThrottleKey(req, username) {
 }
 
 /**
+ * Reduce a user-entered cloud URL to a clean origin (scheme + host, no trailing
+ * slash or path). Prevents malformed URLs like "https://host/" or "https://host/admin"
+ * from producing "//api/sync/pull" or "/admin/api/sync/pull" (both 404).
+ */
+function normalizeCloudUrl(url) {
+    if (!url) return url;
+    let u = String(url).trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    try {
+        return new URL(u).origin;
+    } catch (e) {
+        return u;
+    }
+}
+
+/**
  * Queue a change event for the cloud sync worker. Must be called inside the
  * caller's open transaction so the queue entry commits atomically with the data.
  */
@@ -795,11 +811,14 @@ app.post('/api/activate', async (req, res) => {
     if (admin_password.trim().length < 6) {
         return res.status(400).json({ error: "Administrator password must be at least 6 characters long." });
     }
-    
+
+    // Normalize so a pasted trailing slash or stray path (e.g. /admin) can't 404 the verify call
+    const cleanCloudUrl = normalizeCloudUrl(cloud_url);
+
     try {
         // 1. Send validation request to Render cloud database sync gateway
-        console.log(`[Activation] Verifying store '${store_slug}' against cloud: ${cloud_url}`);
-        const testRes = await fetch(`${cloud_url}/api/sync/pull?since=1970-01-01%2000:00:00`, {
+        console.log(`[Activation] Verifying store '${store_slug}' against cloud: ${cleanCloudUrl}`);
+        const testRes = await fetch(`${cleanCloudUrl}/api/sync/pull?since=1970-01-01%2000:00:00`, {
             method: 'GET',
             headers: {
                 'X-Store-API-Key': sync_api_key.trim(),
@@ -814,7 +833,7 @@ app.post('/api/activate', async (req, res) => {
         
         // 2. Write verified sync details to local system_config table
         conn.exec("BEGIN TRANSACTION;");
-        conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('cloud_url', ?)").run(cloud_url.trim());
+        conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('cloud_url', ?)").run(cleanCloudUrl);
         conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('store_slug', ?)").run(store_slug.trim());
         conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('sync_api_key', ?)").run(sync_api_key.trim());
         
@@ -861,7 +880,7 @@ app.post('/api/config', requireAuth('ADMIN'), (req, res) => {
         conn.exec("BEGIN TRANSACTION;");
         if (store_slug !== undefined) conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('store_slug', ?)").run(store_slug.trim());
         if (sync_api_key !== undefined) conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('sync_api_key', ?)").run(sync_api_key.trim());
-        if (cloud_url !== undefined) conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('cloud_url', ?)").run(cloud_url.trim());
+        if (cloud_url !== undefined) conn.prepare("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('cloud_url', ?)").run(normalizeCloudUrl(cloud_url));
         conn.exec("COMMIT;");
         res.json({ success: true });
     } catch (err) {
