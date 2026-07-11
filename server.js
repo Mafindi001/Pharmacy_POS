@@ -1012,16 +1012,29 @@ app.post('/api/sync/apply', requireAuth('ADMIN', 'PHARMACIST'), (req, res) => {
     }
 });
 
-// Serve frontend static files
-app.use(express.static(path.join(__dirname, 'renderer')));
+// Serve frontend static files. Disable caching so a freshly-installed/updated
+// build never renders stale app.js/styles.css from Electron's Chromium HTTP cache
+// (the cause of "edits not persisting" / mismatched-asset rendering).
+app.use(express.static(path.join(__dirname, 'renderer'), {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
+}));
 
 // Unknown API routes must return JSON, never the SPA shell
 app.use('/api', (req, res) => {
     res.status(404).json({ error: `Unknown API route: ${req.method} ${req.originalUrl}` });
 });
 
-// Catch-all route to serve the SPA
+// Catch-all route to serve the SPA (also uncached)
 app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.join(__dirname, 'renderer', 'index.html'));
 });
 

@@ -18,8 +18,11 @@ function createWindow(port) {
         }
     });
 
-    // Load the local Express web server URL
-    mainWindow.loadURL('http://localhost:' + port);
+    // Purge any HTTP cache left by a previous install so an updated build never
+    // renders stale renderer assets, then load the local Express web server URL.
+    mainWindow.webContents.session.clearCache().finally(() => {
+        mainWindow.loadURL('http://localhost:' + port);
+    });
 
     // Emitted when the window is closed.
     mainWindow.on('closed', function () {
