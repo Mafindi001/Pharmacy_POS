@@ -11,9 +11,45 @@ let serverIpInfo = null;
 
 
 // Barcode scanner wedge listener state
-lastKeyTime = 0;
+let lastKeyTime = 0;
 let barcodeBuffer = '';
 const SCANNER_CHAR_INTERVAL_MS = 30; // Threshold to distinguish scanner from human typing
+
+// ==========================================
+// 0. SECURITY PRIMITIVES (auth header + HTML escaping)
+// ==========================================
+
+/** Escape untrusted values before interpolating into innerHTML. */
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Single-point interceptor: attach the session token to every local /api call
+// and force re-login when the server reports a stale/expired session.
+const _nativeFetch = window.fetch.bind(window);
+window.fetch = async (url, options = {}) => {
+    const isLocalApi = typeof url === 'string' && url.startsWith('/api');
+    if (isLocalApi && currentUser && currentUser.token) {
+        options.headers = { ...(options.headers || {}), 'Authorization': `Bearer ${currentUser.token}` };
+    }
+    const response = await _nativeFetch(url, options);
+    if (isLocalApi && response.status === 401 && currentUser && !url.startsWith('/api/auth/login')) {
+        // Session expired (e.g. server restart) — drop local state and show login
+        sessionStorage.removeItem('currentUser');
+        currentUser = null;
+        const appEl = document.getElementById('app-container');
+        const loginEl = document.getElementById('login-screen');
+        if (appEl) appEl.classList.add('hide');
+        if (loginEl) loginEl.classList.add('active');
+    }
+    return response;
+};
 
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
@@ -57,15 +93,7 @@ async function initApp() {
             if (actData.activated) {
                 if (actScreen) actScreen.classList.remove('active');
                 if (loginScreen) loginScreen.classList.add('active');
-                
-                // Load sync credentials configuration
-                fetchSyncConfig();
-                
-                // Trigger initial pull/push sync sequence
-                executeSyncProcess();
-                
-                // Schedule periodic background database sync worker (every 60 seconds)
-                setInterval(executeSyncProcess, 60000);
+                // Sync worker starts after login — the API requires an authenticated session
             } else {
                 if (actScreen) actScreen.classList.add('active');
                 if (loginScreen) loginScreen.classList.remove('active');
@@ -76,9 +104,20 @@ async function initApp() {
     }
 }
 
+let syncWorkerTimer = null;
+
 function loadUserSession() {
     document.getElementById('login-screen').classList.remove('active');
     document.getElementById('app-container').classList.remove('hide');
+
+    // Start authenticated background sync worker (idempotent across re-logins)
+    fetchSyncConfig();
+    executeSyncProcess();
+    if (!syncWorkerTimer) {
+        syncWorkerTimer = setInterval(() => {
+            if (currentUser) executeSyncProcess();
+        }, 60000);
+    }
     
     // Set Profile Info
     document.getElementById('user-display-name').textContent = currentUser.full_name;
@@ -139,6 +178,8 @@ function setupEventListeners() {
 
     // 2. Logout Button
     document.getElementById('logout-btn').addEventListener('click', () => {
+        // Invalidate the server-side session before dropping local state
+        fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
         sessionStorage.removeItem('currentUser');
         currentUser = null;
         document.getElementById('app-container').classList.add('hide');
@@ -427,6 +468,7 @@ function setupEventListeners() {
             } catch (err) {
                 alert(`Error: ${err.message}`);
             }
+        });
     }
 
     // Onboarding Activation Form Submit
@@ -840,7 +882,7 @@ async function fetchProductsRegistry() {
 
 async function fetchBatchesRegistry() {
     try {
-        const res = await fetch('/api/reports/near-expiry'); // Endpoint lists batches joined with products
+        const res = await fetch('/api/batches'); // All in-stock batches joined with product identity
         if (res.ok) {
             const data = await res.json();
             renderBatchesTable(data);
@@ -1079,12 +1121,12 @@ function renderCart() {
         tr.innerHTML = `
             <td>
                 <div style="display: flex; flex-direction: column;">
-                    <strong style="color: var(--ink);">${p.product_name}</strong>
-                    <span style="font-size: 0.72rem; color: var(--muted);">${p.sku || 'No SKU'}</span>
+                    <strong style="color: var(--ink);">${escapeHtml(p.product_name)}</strong>
+                    <span style="font-size: 0.72rem; color: var(--muted);">${escapeHtml(p.sku) || 'No SKU'}</span>
                 </div>
             </td>
-            <td><span style="font-size: 0.85rem;">${p.generic_name || '-'}</span></td>
-            <td><span class="badge ${p.batch_expiry_alert ? 'warning-bg' : 'safe-bg'}">${p.batch_number || 'AUTO-FEFO'}</span></td>
+            <td><span style="font-size: 0.85rem;">${escapeHtml(p.generic_name) || '-'}</span></td>
+            <td><span class="badge ${p.batch_expiry_alert ? 'warning-bg' : 'safe-bg'}">${escapeHtml(p.batch_number) || 'AUTO-FEFO'}</span></td>
             <td>
                 <button class="sell-type-btn ${item.sell_type === 'UNIT' ? 'active' : ''}" onclick="toggleSellType(${idx})">Unit</button>
                 <button class="sell-type-btn ${item.sell_type === 'PACK' ? 'active' : ''}" onclick="toggleSellType(${idx})">Pack</button>
@@ -1153,8 +1195,8 @@ function renderSearchResults(results) {
         
         div.innerHTML = `
             <div class="search-item-info">
-                <span class="search-item-title">${p.product_name} ${rxBadge} ${narcoticBadge}</span>
-                <span class="search-item-sub">${p.generic_name || ''} - SKU: ${p.sku || '-'} ${multiplierText}</span>
+                <span class="search-item-title">${escapeHtml(p.product_name)} ${rxBadge} ${narcoticBadge}</span>
+                <span class="search-item-sub">${escapeHtml(p.generic_name) || ''} - SKU: ${escapeHtml(p.sku) || '-'} ${escapeHtml(multiplierText)}</span>
             </div>
             <div class="search-item-meta">
                 <span class="search-item-qty">₦${(p.selling_price || 0.0).toFixed(2)} / unit</span>
@@ -1205,11 +1247,11 @@ function renderProductsTable() {
         tr.innerHTML = `
             <td>
                 <div style="display: flex; flex-direction: column;">
-                    <strong style="color: var(--primary);">${p.product_name}</strong>
-                    <span style="font-size: 0.72rem; color: var(--muted);">${p.generic_name || 'No chemical ingredient'}</span>
+                    <strong style="color: var(--primary);">${escapeHtml(p.product_name)}</strong>
+                    <span style="font-size: 0.72rem; color: var(--muted);">${escapeHtml(p.generic_name) || 'No chemical ingredient'}</span>
                 </div>
             </td>
-            <td>${p.category}</td>
+            <td>${escapeHtml(p.category)}</td>
             <td>₦${cost.toFixed(2)}</td>
             <td>₦${price.toFixed(2)}</td>
             <td>
@@ -1223,7 +1265,7 @@ function renderProductsTable() {
             <td>
                 <div style="display: flex; gap: 6px; justify-content: center;">
                     <button class="btn secondary-btn" style="padding: 4px 8px; font-size: 0.78rem;">Edit</button>
-                    <button class="btn danger-btn" style="padding: 4px 8px; font-size: 0.78rem; background-color: var(--danger); color: var(--bg); border: 0;" onclick="event.stopPropagation(); deleteProduct(${p.id}, '${p.product_name.replace(/'/g, "\\'")}')">Delete</button>
+                    <button class="btn danger-btn" style="padding: 4px 8px; font-size: 0.78rem; background-color: var(--danger); color: var(--bg); border: 0;" onclick="event.stopPropagation(); deleteProduct(${p.id}, this.dataset.name)" data-name="${escapeHtml(p.product_name)}">Delete</button>
                 </div>
             </td>
         `;
@@ -1243,18 +1285,18 @@ function renderProductsTable() {
                 <div class="expanded-detail-box" onclick="event.stopPropagation();">
                     <form onsubmit="saveProductInline(event, ${p.id})">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                            <h4 style="margin: 0; color: var(--primary); font-size: 1rem;">Edit Product: ${p.product_name}</h4>
+                            <h4 style="margin: 0; color: var(--primary); font-size: 1rem;">Edit Product: ${escapeHtml(p.product_name)}</h4>
                             <span style="font-size: 0.75rem; color: var(--muted);">ID: ${p.id} | Stock: ${p.total_qty || 0} units</span>
                         </div>
                         
                         <div class="input-group-row">
                             <div class="input-group">
                                 <label>Product Name *</label>
-                                <input type="text" id="inline-prod-name-${p.id}" value="${p.product_name.replace(/"/g, '&quot;')}" required>
+                                <input type="text" id="inline-prod-name-${p.id}" value="${escapeHtml(p.product_name)}" required>
                             </div>
                             <div class="input-group">
                                 <label>Generic Name (Active Ingredient)</label>
-                                <input type="text" id="inline-prod-generic-${p.id}" value="${(p.generic_name || '').replace(/"/g, '&quot;')}">
+                                <input type="text" id="inline-prod-generic-${p.id}" value="${escapeHtml(p.generic_name || '')}">
                             </div>
                         </div>
                         
@@ -1292,7 +1334,7 @@ function renderProductsTable() {
                         <!-- Inline Custom Category Field -->
                         <div class="input-group ${isCustomCategory ? '' : 'hide'}" id="inline-custom-category-group-${p.id}">
                             <label>Enter Custom Category Name *</label>
-                            <input type="text" id="inline-prod-custom-category-${p.id}" value="${isCustomCategory ? p.category.replace(/"/g, '&quot;') : ''}" placeholder="e.g. Immunologicals">
+                            <input type="text" id="inline-prod-custom-category-${p.id}" value="${isCustomCategory ? escapeHtml(p.category) : ''}" placeholder="e.g. Immunologicals">
                         </div>
 
                         <div class="input-group-row" style="grid-template-columns: repeat(3, 1fr);">
@@ -1343,12 +1385,12 @@ function renderBatchesTable(batches) {
     batches.forEach(b => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td><strong>${b.product_name}</strong></td>
-            <td><span class="badge warning-bg">${b.batch_number}</span></td>
-            <td>${b.expiry_date}</td>
+            <td><strong>${escapeHtml(b.product_name)}</strong></td>
+            <td><span class="badge warning-bg">${escapeHtml(b.batch_number)}</span></td>
+            <td>${escapeHtml(b.expiry_date)}</td>
             <td><strong style="color: var(--primary);">${b.quantity_on_hand} units</strong></td>
-            <td>₦${b.cost_price.toFixed(2)}</td>
-            <td>₦${b.selling_price.toFixed(2)}</td>
+            <td>₦${(b.cost_price ?? 0).toFixed(2)}</td>
+            <td>₦${(b.selling_price ?? 0).toFixed(2)}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -1374,9 +1416,9 @@ async function syncReportsAnalyticsData() {
                 data.forEach(item => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td><strong>${item.product_name}</strong></td>
-                        <td><span class="badge warning-bg">${item.batch_number}</span></td>
-                        <td><span style="color: var(--danger); font-weight: 600;">${item.expiry_date}</span></td>
+                        <td><strong>${escapeHtml(item.product_name)}</strong></td>
+                        <td><span class="badge warning-bg">${escapeHtml(item.batch_number)}</span></td>
+                        <td><span style="color: var(--danger); font-weight: 600;">${escapeHtml(item.expiry_date)}</span></td>
                         <td>${item.quantity_on_hand}</td>
                     `;
                     tbody.appendChild(tr);
@@ -1397,8 +1439,8 @@ async function syncReportsAnalyticsData() {
                 data.forEach(item => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td><strong>${item.product_name}</strong></td>
-                        <td><span style="font-family: var(--font-mono); font-size: 0.8rem;">${item.sku || '-'}</span></td>
+                        <td><strong>${escapeHtml(item.product_name)}</strong></td>
+                        <td><span style="font-family: var(--font-mono); font-size: 0.8rem;">${escapeHtml(item.sku) || '-'}</span></td>
                         <td>${item.reorder_level}</td>
                         <td><span style="color: var(--danger); font-weight: 700;">${item.total_quantity_on_hand}</span></td>
                     `;
@@ -1419,10 +1461,10 @@ async function syncReportsAnalyticsData() {
                 data.forEach(item => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td><strong>${item.product_name}</strong></td>
-                        <td>${item.generic_name || '-'}</td>
-                        <td><span style="font-family: var(--font-mono); font-size: 0.8rem;">${item.sku || '-'}</span></td>
-                        <td>${item.category}</td>
+                        <td><strong>${escapeHtml(item.product_name)}</strong></td>
+                        <td>${escapeHtml(item.generic_name) || '-'}</td>
+                        <td><span style="font-family: var(--font-mono); font-size: 0.8rem;">${escapeHtml(item.sku) || '-'}</span></td>
+                        <td>${escapeHtml(item.category)}</td>
                         <td>${item.total_quantity_on_hand} units</td>
                     `;
                     tbody.appendChild(tr);
@@ -1487,12 +1529,12 @@ async function fetchSalesLedger() {
                 const dateObj = new Date(inv.created_at);
                 const localTime = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                 tr.innerHTML = `
-                    <td><strong style="color: var(--primary); font-family: var(--font-mono);">${inv.invoice_number}</strong></td>
+                    <td><strong style="color: var(--primary); font-family: var(--font-mono);">${escapeHtml(inv.invoice_number)}</strong></td>
                     <td>${localTime}</td>
-                    <td>${inv.customer_name}</td>
-                    <td>${inv.cashier_name}</td>
-                    <td><span class="badge safe-bg">${inv.payment_method}</span></td>
-                    <td style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${inv.items_summary || ''}">${inv.items_summary || '-'}</td>
+                    <td>${escapeHtml(inv.customer_name)}</td>
+                    <td>${escapeHtml(inv.cashier_name)}</td>
+                    <td><span class="badge safe-bg">${escapeHtml(inv.payment_method)}</span></td>
+                    <td style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(inv.items_summary || '')}">${escapeHtml(inv.items_summary) || '-'}</td>
                     <td><strong>₦${inv.total_amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
                 `;
                 tbody.appendChild(tr);
@@ -1556,16 +1598,16 @@ function renderStaffTable(staffList) {
         const isSelf = currentUser && currentUser.id === u.id;
         
         tr.innerHTML = `
-            <td><strong>${u.full_name}</strong></td>
-            <td><span style="font-family: var(--font-mono);">${u.username}</span></td>
-            <td><span class="badge warning-bg">${u.role}</span></td>
+            <td><strong>${escapeHtml(u.full_name)}</strong></td>
+            <td><span style="font-family: var(--font-mono);">${escapeHtml(u.username)}</span></td>
+            <td><span class="badge warning-bg">${escapeHtml(u.role)}</span></td>
             <td>${u.is_active === 1 ? '<span class="badge safe-bg">Active</span>' : '<span class="badge danger-bg">Disabled</span>'}</td>
             <td>
                 <div style="display: flex; gap: 8px;">
                     <button class="btn ${disableBtnClass}" style="padding: 4px 8px; font-size: 0.8rem;" ${isSelf ? 'disabled' : ''} onclick="toggleUserStatus(${u.id}, ${u.is_active === 1 ? 0 : 1})">
                         ${disableBtnText}
                     </button>
-                    <button class="btn secondary-btn" style="padding: 4px 8px; font-size: 0.8rem;" onclick="resetUserPassword(${u.id}, '${u.username}')">
+                    <button class="btn secondary-btn" style="padding: 4px 8px; font-size: 0.8rem;" onclick="resetUserPassword(${u.id}, this.dataset.username)" data-username="${escapeHtml(u.username)}">
                         Reset Pass
                     </button>
                 </div>
