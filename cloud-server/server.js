@@ -74,7 +74,8 @@ app.post('/api/sync/push', authenticateStore, async (req, res) => {
     }
     
     const syncedIds = [];
-    
+    const pushTimestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
     try {
         if (usePostgres) {
             // Postgres push transaction
@@ -111,6 +112,40 @@ app.post('/api/sync/push', authenticateStore, async (req, res) => {
                             }
                         }
                         syncedIds.push(ev.id);
+                    } else if (ev.table_name === 'products') {
+                        const p = JSON.parse(ev.payload);
+                        await client.query(`
+                            INSERT INTO products (id, tenant_id, product_name, generic_name, sku, barcode, category, form, pack_size, base_unit_multiplier, reorder_level, is_prescription_required, minimum_order_quantity, updated_at)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                            ON CONFLICT (tenant_id, id) DO UPDATE SET
+                                product_name = EXCLUDED.product_name, generic_name = EXCLUDED.generic_name,
+                                sku = EXCLUDED.sku, barcode = EXCLUDED.barcode, category = EXCLUDED.category,
+                                form = EXCLUDED.form, pack_size = EXCLUDED.pack_size,
+                                base_unit_multiplier = EXCLUDED.base_unit_multiplier, reorder_level = EXCLUDED.reorder_level,
+                                is_prescription_required = EXCLUDED.is_prescription_required,
+                                minimum_order_quantity = EXCLUDED.minimum_order_quantity, updated_at = EXCLUDED.updated_at
+                        `, [
+                            p.id, tenantId, p.product_name, p.generic_name, p.sku, p.barcode, p.category, p.form,
+                            p.pack_size, p.base_unit_multiplier || 1, p.reorder_level || 10,
+                            p.is_prescription_required || 0, p.minimum_order_quantity || 1, pushTimestamp
+                        ]);
+                        syncedIds.push(ev.id);
+                    } else if (ev.table_name === 'product_batches') {
+                        const b = JSON.parse(ev.payload);
+                        await client.query(`
+                            INSERT INTO product_batches (id, tenant_id, product_id, batch_number, expiry_date, quantity_on_hand, cost_price, selling_price, supplier_name, received_date, updated_at)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                            ON CONFLICT (tenant_id, id) DO UPDATE SET
+                                product_id = EXCLUDED.product_id, batch_number = EXCLUDED.batch_number,
+                                expiry_date = EXCLUDED.expiry_date, quantity_on_hand = EXCLUDED.quantity_on_hand,
+                                cost_price = EXCLUDED.cost_price, selling_price = EXCLUDED.selling_price,
+                                supplier_name = EXCLUDED.supplier_name, received_date = EXCLUDED.received_date,
+                                updated_at = EXCLUDED.updated_at
+                        `, [
+                            b.id, tenantId, b.product_id, b.batch_number, b.expiry_date, b.quantity_on_hand,
+                            b.cost_price, b.selling_price, b.supplier_name, b.received_date, pushTimestamp
+                        ]);
+                        syncedIds.push(ev.id);
                     }
                 }
                 await client.query('COMMIT;');
@@ -134,16 +169,25 @@ app.post('/api/sync/push', authenticateStore, async (req, res) => {
                     VALUES (?, (SELECT id FROM invoices WHERE tenant_id = ? AND invoice_number = ?), ?, ?, ?, ?, ?)
                 `);
                 
+                const upsertProduct = sqliteDb.prepare(`
+                    INSERT OR REPLACE INTO products (id, tenant_id, product_name, generic_name, sku, barcode, category, form, pack_size, base_unit_multiplier, reorder_level, is_prescription_required, minimum_order_quantity, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `);
+                const upsertBatch = sqliteDb.prepare(`
+                    INSERT OR REPLACE INTO product_batches (id, tenant_id, product_id, batch_number, expiry_date, quantity_on_hand, cost_price, selling_price, supplier_name, received_date, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `);
+
                 for (const ev of events) {
                     if (ev.table_name === 'invoices' && ev.action_type === 'INSERT') {
                         const invoice = JSON.parse(ev.payload);
-                        
+
                         insertInv.run(
                             tenantId, invoice.invoice_number, invoice.user_id, invoice.customer_name,
                             invoice.customer_phone, invoice.total_amount, invoice.payment_method,
                             invoice.doctor_name, invoice.doctor_license_number, invoice.created_at
                         );
-                        
+
                         if (invoice.items && Array.isArray(invoice.items)) {
                             for (const item of invoice.items) {
                                 insertItem.run(
@@ -152,6 +196,21 @@ app.post('/api/sync/push', authenticateStore, async (req, res) => {
                                 );
                             }
                         }
+                        syncedIds.push(ev.id);
+                    } else if (ev.table_name === 'products') {
+                        const p = JSON.parse(ev.payload);
+                        upsertProduct.run(
+                            p.id, tenantId, p.product_name, p.generic_name, p.sku, p.barcode, p.category, p.form,
+                            p.pack_size, p.base_unit_multiplier || 1, p.reorder_level || 10,
+                            p.is_prescription_required || 0, p.minimum_order_quantity || 1, pushTimestamp
+                        );
+                        syncedIds.push(ev.id);
+                    } else if (ev.table_name === 'product_batches') {
+                        const b = JSON.parse(ev.payload);
+                        upsertBatch.run(
+                            b.id, tenantId, b.product_id, b.batch_number, b.expiry_date, b.quantity_on_hand,
+                            b.cost_price, b.selling_price, b.supplier_name, b.received_date, pushTimestamp
+                        );
                         syncedIds.push(ev.id);
                     }
                 }
@@ -223,7 +282,8 @@ app.get('/api/sync/pull', authenticateStore, async (req, res) => {
 });
 
 // 3. MOCK UTILITY ROUTE: Add mock drugs or edit drug price on cloud server to test bidirectional sync
-app.post('/api/admin/mock-product-price-change', async (req, res) => {
+// Gated behind admin session auth — this route mutates tenant data. (authenticateAdmin hoists.)
+app.post('/api/admin/mock-product-price-change', (req, res, next) => authenticateAdmin(req, res, next), async (req, res) => {
     const { slug, api_key, product_id, new_price, new_cost } = req.body;
     
     if (!slug || !api_key || !product_id || !new_price) {
@@ -279,9 +339,24 @@ app.post('/api/admin/mock-product-price-change', async (req, res) => {
 });
 
 // Admin panel credentials environment resolver
+const adminCrypto = require('crypto');
 const ADMIN_USER = process.env.CLOUD_ADMIN_USER || 'admin';
-const ADMIN_PASS = process.env.CLOUD_ADMIN_PASS || 'admin123';
-const ADMIN_TOKEN = 'secret_token_session_rxmanager_2026';
+const ADMIN_PASS = process.env.CLOUD_ADMIN_PASS || null;
+
+if (!ADMIN_PASS) {
+    console.warn("[Cloud Admin] WARNING: CLOUD_ADMIN_PASS env var is not set — the /admin panel is DISABLED until it is configured.");
+}
+
+// Random per-session admin tokens with a 12-hour expiry (nothing static in source)
+const adminSessions = new Map(); // token -> issuedAt
+const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+function timingSafeEquals(a, b) {
+    const bufA = Buffer.from(String(a));
+    const bufB = Buffer.from(String(b));
+    if (bufA.length !== bufB.length) return false;
+    return adminCrypto.timingSafeEqual(bufA, bufB);
+}
 
 // Helper Admin auth middleware
 function authenticateAdmin(req, res, next) {
@@ -290,17 +365,24 @@ function authenticateAdmin(req, res, next) {
         return res.status(401).json({ error: "Unauthorized. Missing authorization token." });
     }
     const token = authHeader.split(' ')[1];
-    if (token !== ADMIN_TOKEN) {
-        return res.status(403).json({ error: "Forbidden. Invalid administrator session." });
+    const issuedAt = adminSessions.get(token);
+    if (!issuedAt || (Date.now() - issuedAt) > ADMIN_SESSION_TTL_MS) {
+        if (issuedAt) adminSessions.delete(token);
+        return res.status(403).json({ error: "Forbidden. Invalid or expired administrator session." });
     }
     next();
 }
 
-// POST /api/admin/login (Verify admin password and return token)
+// POST /api/admin/login (Verify admin password and return a fresh random token)
 app.post('/api/admin/login', (req, res) => {
     const { user, pass } = req.body;
-    if (user === ADMIN_USER && pass === ADMIN_PASS) {
-        res.json({ success: true, token: ADMIN_TOKEN });
+    if (!ADMIN_PASS) {
+        return res.status(503).json({ error: "Admin panel disabled: CLOUD_ADMIN_PASS is not configured on the server." });
+    }
+    if (timingSafeEquals(user, ADMIN_USER) && timingSafeEquals(pass, ADMIN_PASS)) {
+        const token = adminCrypto.randomBytes(32).toString('hex');
+        adminSessions.set(token, Date.now());
+        res.json({ success: true, token });
     } else {
         res.status(401).json({ error: "Invalid administrator credentials." });
     }
@@ -605,15 +687,21 @@ app.get('/admin', (req, res) => {
                             tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--muted);">No store terminals provisioned yet.</td></tr>';
                             return;
                         }
+                        const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
                         data.forEach(s => {
                             const tr = document.createElement('tr');
                             tr.innerHTML = \`
-                                <td><strong>\${s.store_name}</strong></td>
-                                <td><span style="color: var(--primary);">\${s.slug}</span></td>
-                                <td><span class="copyable" onclick="navigator.clipboard.writeText('\${s.api_key}'); alert('API Key copied!');">\${s.api_key} [Copy]</span></td>
-                                <td><span style="font-family: monospace; font-size: 0.8rem;">\${s.id}</span></td>
-                                <td><button class="btn danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="deleteStore('\${s.id}')">Delete</button></td>
+                                <td><strong>\${esc(s.store_name)}</strong></td>
+                                <td><span style="color: var(--primary);">\${esc(s.slug)}</span></td>
+                                <td><span class="copyable">\${esc(s.api_key)} [Copy]</span></td>
+                                <td><span style="font-family: monospace; font-size: 0.8rem;">\${esc(s.id)}</span></td>
+                                <td><button class="btn danger" style="padding: 4px 8px; font-size: 0.75rem;">Delete</button></td>
                             \`;
+                            tr.querySelector('.copyable').addEventListener('click', () => {
+                                navigator.clipboard.writeText(s.api_key);
+                                alert('API Key copied!');
+                            });
+                            tr.querySelector('.btn.danger').addEventListener('click', () => deleteStore(s.id));
                             tbody.appendChild(tr);
                         });
                     } catch(err) {
