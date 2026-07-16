@@ -1147,3 +1147,57 @@ select {
     }
     .modal-actions { display: none !important; }
 }
+
+/* ==============================================================
+   15. TOAST NOTIFICATIONS (non-blocking, replaces alert dialogs)
+   ============================================================== */
+#toast-host {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 100000;              /* above modal overlays */
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;         /* clicks pass through the host */
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 240px;
+    max-width: 360px;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #FFFFFF;
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transform: translateX(24px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: auto;
+}
+
+.toast.toast-show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.toast-success { background-color: var(--safe); }
+.toast-error   { background-color: var(--danger); }
+
+.toast-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.22);
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+
+.toast-msg { line-height: 1.3; }

@@ -281,15 +281,19 @@ function setupEventListeners() {
                     body: JSON.stringify(payload)
                 });
                 if (res.ok) {
-                    alert("Product registered successfully!");
-                    document.getElementById('product-modal').classList.remove('active');
+                    const savedName = payload.product_name;
+                    showToast(`Product "${savedName}" added successfully`, 'success');
+                    // Keep modal open for continuous entry: reset fields, refocus name
+                    productModalForm.reset();
+                    document.getElementById('modal-custom-category-group').classList.add('hide');
+                    document.getElementById('modal-prod-name').focus();
                     fetchProductsRegistry();
                 } else {
                     const data = await res.json();
-                    alert(`Error: ${data.error}`);
+                    showToast(`Error: ${data.error}`, 'error');
                 }
             } catch (err) {
-                alert(`Error: ${err.message}`);
+                showToast(`Error: ${err.message}`, 'error');
             }
         });
     }
@@ -802,10 +806,39 @@ async function handleBarcodeScanned(barcode) {
         searchInput.value = '';
         document.getElementById('search-results-dropdown').classList.add('hide');
     } else {
-        // Try fetching online or alert
-        alert(`No registered product matches barcode: ${barcode}`);
+        // Non-blocking notice: native alert() wedges mouse input in packaged Electron
+        showToast(`No product matches barcode: ${barcode}`, 'error');
         searchInput.select();
     }
+}
+
+// ==========================================
+// NON-BLOCKING TOAST (replaces blocking native alert dialogs)
+// Native alert() freezes renderer mouse input in packaged Electron on Windows.
+// ==========================================
+function showToast(message, type = 'success') {
+    let host = document.getElementById('toast-host');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'toast-host';
+        document.body.appendChild(host);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type === 'error' ? 'error' : 'success'}`;
+    const icon = type === 'error' ? '✕' : '✓';
+    toast.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-msg"></span>`;
+    toast.querySelector('.toast-msg').textContent = message;
+    host.appendChild(toast);
+
+    // Force reflow so the enter transition runs
+    void toast.offsetWidth;
+    toast.classList.add('toast-show');
+
+    setTimeout(() => {
+        toast.classList.remove('toast-show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 // ==========================================
